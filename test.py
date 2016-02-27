@@ -22,7 +22,7 @@ import re
 class DOS():
     target = None
     port = None
-
+    #init
     def __init__(self, target, port = 80):
         self.target = target
         self.port = int(port)
