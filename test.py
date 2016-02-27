@@ -18,7 +18,7 @@ import time
 import sys
 import os
 import re
-
+              
 class DOS():
     target = None
     port = None
