@@ -255,7 +255,7 @@ class HTTP(object):
             if ext in ['html', 'htm', 'php']:
                 if loc.startswith('../'):
                     # Fetch res with relative path
-                    loc = os.path.normpath(os.path.join(page, loc))
+                    loc = os.path.normpath(os.path.join(os.path.dirname(page), loc))
                     to_fetch.append(loc)
                 elif loc.startswith('/'):
                     # Fetch res with absolute path
@@ -423,7 +423,7 @@ class XSS():
         formdata = urllib.urlencode(self.fillForm(form, fieldvalue))
 
         if form['action'] == '': form_dest = self.page
-        else: form_dest = os.path.normpath(os.path.join(self.page, form['action']))
+        else: form_dest = os.path.normpath(os.path.join(os.path.dirname(self.page), form['action']))
 
         if form['method'].lower() == 'post': self.target.POST(form_dest, data=formdata)
         elif form['method'].lower() == 'get': self.target.GET(form_dest + '?' + formdata)
@@ -431,7 +431,7 @@ class XSS():
         print XSS.PAYLOAD in self.target.get[form_dest]['data']
 
 if __name__ == "__main__":
-    conf.L3socket=L3RawSocket
+    conf.L3socket = L3RawSocket
 
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
