@@ -7,6 +7,7 @@
 ## TODO:
 ##  - vérifier que le code HTTP est 200 avant de poursuivre une attaque
 ##  - Prendre en compte les redirection avec le header location
+##  - ATTENTION longueur payload XSS
 
 
 from scapy.all import *
@@ -358,7 +359,7 @@ class ShellShock(HTTP):
         self.GET(self.target)
 
 class XSS():
-    PAYLOAD = "<a onmouseover=\"alert('" + getUniqueID() + "')\"</script>"
+    PAYLOAD = "<a onmouseover=\"alert('" + getUniqueID() + "')\">test</a>"
 
     def __init__(self, host, page, cookie = None):
         print host, page
