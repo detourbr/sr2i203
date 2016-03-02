@@ -227,29 +227,33 @@ class HTTP(object):
 
 
     def __http_post(self, page, syn_ack, data=''):
-        # Envoie de la requête GET
+        # Modifying header to send form
         self.setHeader('Content-Type', 'application/x-www-form-urlencoded')
         self.setHeader('Content-Length', str(len(data)))
 
+        # Sending POST request
         postStr = 'POST /' + page + ' HTTP/1.1\r\n' + self.formatHeader()
         postStr += data
 
+        # Deleting POST-specific headers
         del self.request_header['Content-Type']
         del self.request_header['Content-Length']
 
         return self.__tcp_request(page, syn_ack, postStr)
 
 
-    def __tcp_request(self, page, syn_ack, html_request):
+    def __tcp_request(self, page, syn_ack, http_request):
         """
             Execute une requete TCP en y ajoutant une requête HTML donnée en paramètre
         """
+        # Creating FIFO queue
         q = Queue.Queue()
 
-        request = IP(dst=self.host) / TCP(dport=80, sport=syn_ack[TCP].dport, seq=syn_ack[TCP].ack, ack=syn_ack[TCP].seq + 1, flags='PA') / html_request
+        # Preparing packet with the http payload
+        request = IP(dst=self.host) / TCP(dport=80, sport=syn_ack[TCP].dport, seq=syn_ack[TCP].ack, ack=syn_ack[TCP].seq + 1, flags='PA') / http_request
         repl, u = sr(request, multi=1, timeout=1, verbose=0)
 
-        # On stocke tous les packets recus dans une file d'attente
+        # Append all received packets to a FIFO queue
         for s, reply in repl: q.put(reply)
 
         # Proceeding queue and adding new replies to it

