@@ -90,7 +90,7 @@ class FormAttack():
 
         # Fetching target page and verifying that it is a successful request
         targetPage = self.target.GET(self.page)
-        if targetPage['Code'] != 200:
+        if targetPage['code'] != 200:
             print "Impossible de récupérer la page cible - erreur", targetPage['Code']
             return -1
 

@@ -311,4 +311,5 @@ class ShellShock(HTTP):
 
     def run(self, command):
         self.setHeader('User-Agent', ShellShock.USER_AGENT + command)
+        print ShellShock.USER_AGENT + command
         self.GET(self.target)
