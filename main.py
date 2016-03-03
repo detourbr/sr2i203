@@ -6,9 +6,8 @@
 
 ## TODO:
 ##  - vérifier que le code HTTP est 200 avant de poursuivre une attaque
-##  - Prendre en compte les redirection avec le header location
-##  - ATTENTION longueur payload XSS
-
+##  - cas ou input n'est pas donné en arg ?
+##  - Implémentation des command injection ?
 
 from FormAttack import *
 from http import *
@@ -41,6 +40,7 @@ if __name__ == "__main__":
     parser.add_argument("-s", "--shellshock", help='Teste la vulnérabilité à Shellshock (nécessite un cgi comme cible)', action='store_true')
     parser.add_argument("-c", "--cookie", help='Cookie à utiliser', action='store')
     parser.add_argument("-x", "--xss", help='Teste une attaque XSS sur l\'hote cible.', action='store_true')
+    parser.add_argument("-q", "--sql-injection", help='Teste une attaque XSS sur l\'hote cible.', action='store_true')
     parser.add_argument("-i", "--input", help="Nom du champs à attaquer pour les attaques XSS ou les injections SQL.", action='store')
     parser.add_argument("-v", "--fieldvalue", help="Valeur par défaut d'un autre champ (optionnel) format champ=valeur. Possibilité de spécifier plusieurs champs en appelant plusieurs fois cet argument.", action='append', default=[])
     args = parser.parse_args()
@@ -50,6 +50,10 @@ if __name__ == "__main__":
 
     if args.xss:
         attack = XSS(host, page, args.cookie)
+        attack.run(args.input, dict([i.split('=') for i in args.fieldvalue]))
+
+    if args.sql_injection:
+        attack = SQLInjection(host, page, args.cookie)
         attack.run(args.input, dict([i.split('=') for i in args.fieldvalue]))
 
     if args.shellshock:

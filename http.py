@@ -24,6 +24,7 @@ class HTTP(object):
     FORM_REGEX = re.compile(r"<form(?P<form_param>.*?)>(?P<content>.*?)</form>", re.IGNORECASE | re.DOTALL)
     INPUT_REGEX = re.compile(r"<input(.*?)>", re.IGNORECASE | re.DOTALL)
     TXTAREA_REGEX = re.compile(r"<textarea(.*?)>(?:.*?)</textarea>", re.IGNORECASE | re.DOTALL)
+    SELECT_REGEX = re.compile(r"<select(.*?)>(?:.*?)<option(?:.*?)value=(?:\"|')(.*?)(?:\"|')(?:.*?)>(?:.*?)</option>(?:.*?)</select>", re.IGNORECASE)
     PARAM_REGEX = re.compile(r"(?P<name>\w*?)\=(?:\"|')(?P<value>.*?)(?:\"|')", re.IGNORECASE)
 
     # Defining TCP flags
@@ -59,7 +60,7 @@ class HTTP(object):
             Permet d'établir le handshake TCP entre la machine et un hôte distant
         """
 
-        print "SYN/ACK ", self.host, self.sport
+        # print "SYN/ACK ", self.host, self.sport
         syn = IP(dst = self.host) / TCP(dport=80, sport=self.sport, flags='S')
         syn_ack = sr1(syn, verbose=0) # Sending syn, receiving syn ack
 
@@ -164,6 +165,7 @@ class HTTP(object):
 
             form = dict(HTTP.PARAM_REGEX.findall(params))
 
+            # Parsing regular inputs
             inputs = HTTP.INPUT_REGEX.findall(content)
             form['inputs'] = {}
             for e in inputs:
@@ -175,14 +177,25 @@ class HTTP(object):
                 form['inputs'][name] = params
                 if 'required' in params: form['inputs'][name]['required'] = True
 
+            # Parsing text areas
             txtareas = HTTP.TXTAREA_REGEX.findall(content)
             for txtarea in txtareas:
                 params = dict(HTTP.PARAM_REGEX.findall(txtarea))
-                name = params['name']
 
                 form['inputs'][params['name']] = params
                 form['inputs'][params['name']]['type'] = 'textarea'
                 if 'required' in params: form['inputs'][params['name']]['required'] = True
+
+            # Parsing select inputs
+            selects = HTTP.SELECT_REGEX.findall(content)
+            for params, value in selects:
+                params = dict(HTTP.PARAM_REGEX.findall(params))
+
+                form['inputs'][params['name']] = params
+                form['inputs'][params['name']]['type'] = 'select'
+                form['inputs'][params['name']]['value'] = value
+                if 'required' in params: form['inputs'][params['name']]['required'] = True
+
 
             self.get[page]['forms'].append(form)
         return self.get[page]['forms']
