@@ -33,11 +33,11 @@ Avec `COOKIE` le cookie à utiliser si besoin et `target` la page cible (script 
 #### XSS
 Pour tester une attaque XSS, la syntaxe est la suivante:
 
-    user@debian# ./main.py --xss --input INPUT [--cookie COOKIE] target
+    user@debian# ./main.py --xss [--input INPUT] [--cookie COOKIE] target
 
 Avec :
 * `COOKIE` le cookie à utiliser si besoin
-* `INPUT` le nom (paramètre name) du champs dans lequel tenter le XSS
+* `INPUT` le nom (paramètre name) du champs dans lequel tenter le XSS. S'il n'est pas spécifié il sera tenté dans tous les champs texte.
 * `target` la page cible (script cgi).
 
 ## Fichier http.py
