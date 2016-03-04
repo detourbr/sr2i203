@@ -22,7 +22,7 @@ class FormAttack():
 
         # Looking for forms where the targeted field exists.
         for form in forms:
-            if self.fieldname in form['inputs']:
+            if (self.fieldname in form['inputs']) or self.fieldname == None:
                 selected_forms.append(form)
 
         # If more than one form is found, printing forms and asking to the user which one to use.
@@ -73,13 +73,14 @@ class FormAttack():
                 continue
             # Filling some specific and required input types, if not required leave it blank
             elif inp['type'] in ['text', 'password', 'url', 'search', 'textarea']:
-                if 'required' in inp: data[name] = "xss testing"
+                if self.fieldname == None: data[name] = self.PAYLOAD
+                elif 'required' in inp: data[name] = "xss testing"
                 else: data[name] = ""
             else: data[name] = ""
 
         # Inserting payload (overwritting) the target input
         # Payload can be a SQL injection, an XSS, a CRSF
-        data[self.fieldname] = self.PAYLOAD
+        if self.fieldname: data[self.fieldname] = self.PAYLOAD
         return data
 
     def run(self, fieldname, fieldvalue = {}):
@@ -133,7 +134,7 @@ class XSS(FormAttack):
             return False
 
 class CommandInjection(FormAttack):
-    PAYLOAD = "xxx  || echo 'COMMAND_INJECTION_WORK'"
+    PAYLOAD = "xxx || echo 'COMMAND_INJECTION_WORK'"
 
     def run(self, fieldname, fieldvalue = {}):
 
@@ -150,13 +151,13 @@ class CommandInjection(FormAttack):
 
 class SQLInjection(FormAttack):
     PAYLOAD = "' OR 1=1 #"
-    TEST = ['\' OR SQL_INJECTION_WORK ; #', '" OR SQL_INJECTION_WORK ; #', ' OR SQL_INJECTION_WORK ; #']
+    TEST = ['\' OR SQL_INJECTION_WORK ; #', '" OR SQL_INJECTION_WORK ; #', '1 OR SQL_INJECTION_WORK ; #']
 
     ###
     ### How to verify that a SQL injection works ??
     ###
     def success(self, result):
-        return ('Unknown column' in result and 'SQL_INJECTION_WORK' in result)
+        return ('Unknown column' in result and 'SQL_INJECTION_WORK' in result) or ('You have an error in your SQL syntax' in result)
 
     def run(self, fieldname, fieldvalue = {}):
 

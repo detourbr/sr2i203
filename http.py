@@ -264,7 +264,7 @@ class HTTP(object):
 
         # Preparing packet with the http payload
         request = IP(dst=self.host) / TCP(dport=80, sport=syn_ack[TCP].dport, seq=syn_ack[TCP].ack, ack=syn_ack[TCP].seq + 1, flags='PA') / http_request
-        repl, u = sr(request, multi=1, timeout=1, verbose=0)
+        repl, u = sr(request, multi=1, timeout=1, retry=3, verbose=0)
 
         # Append all received packets to a FIFO queue
         for s, reply in repl: q.put(reply)
