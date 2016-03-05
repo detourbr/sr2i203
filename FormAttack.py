@@ -10,6 +10,7 @@ class FormAttack():
     def __init__(self, host, page, cookie = None):
         self.target = HTTP(host, header = {'Cookie': cookie} if cookie else {})
         self.page = page
+        self.form = None
 
     def selectForms(self, forms):
         """
@@ -33,6 +34,7 @@ class FormAttack():
                 id = input('Plusieurs formulaires affichés ci-dessus ont été trouvés.\nMerci de spécifier celui à utiliser (rentrer un l\'ID entre 0 et ' + str(len(selected_forms) - 1) + ') ? ')
         # If no form is found, stop the attack.
         elif len(selected_forms) == 0:
+            print self.target.get[self.page]
             print "Aucun formulaire contenant un champ '", self.fieldname, "'. Abandon."
             return None
         # If only one form, selecting this one
@@ -68,14 +70,14 @@ class FormAttack():
 
             if name in fv:              # If value specified in program arguments (fv), use it.
                 data[name] = fv[name]
-            elif 'value' in inp:        # If a default value is presetted, keep this value
-                data[inp['name']] = inp['value']
-                continue
             # Filling some specific and required input types, if not required leave it blank
-            elif inp['type'] in ['text', 'password', 'url', 'search', 'textarea']:
+            elif inp['type'] in ['text', 'password', 'url', 'search', 'textarea', 'select', 'radio']:
                 if self.fieldname == None: data[name] = self.PAYLOAD
                 elif 'required' in inp: data[name] = "xss testing"
                 else: data[name] = ""
+            elif 'value' in inp:        # If a default value is presetted, keep this value
+                data[inp['name']] = inp['value']
+                continue
             else: data[name] = ""
 
         # Inserting payload (overwritting) the target input
@@ -89,29 +91,33 @@ class FormAttack():
             puis récupère la réponse du formulaire
         """
 
-        # Fetching target page and verifying that it is a successful request
-        targetPage = self.target.GET(self.page)
+        # Fetching target page (if not already done) and verifying that it is a successful request
+        if self.page in self.target.get: targetPage = self.target.get[self.page]
+        else: targetPage = self.target.GET(self.page)
+
         if targetPage['code'] != 200:
-            print "Impossible de récupérer la page cible - erreur", targetPage['Code']
+            print "Impossible de récupérer la page cible - erreur", targetPage['code']
             return -1
 
         # Writing the target field/input name as an object variable
         self.fieldname = fieldname
 
         # Selecting the targeted form in the target page
-        form = self.selectForms(self.target.getForms(self.page))
-        if not form: return -1   # In case no form is found, selectForm will return 0
+        if not self.form:
+            self.form = self.selectForms(self.target.getForms(self.page))
+        if not self.form: return -1   # In case no form is found, selectForm will return 0
 
         # Filling and url enconding form data
-        formdata = urllib.urlencode(self.fillForm(form, fieldvalue))
+        formdata = urllib.urlencode(self.fillForm(self.form, fieldvalue))
+        print formdata
 
         # Detecting where to send the form
-        if (not 'action' in form) or form['action'] in ['', '#']: form_dest = self.page
-        else: form_dest = os.path.normpath(os.path.join(os.path.dirname(self.page), form['action']))
+        if (not 'action' in self.form) or self.form['action'] in ['', '#']: form_dest = self.page
+        else: form_dest = os.path.normpath(os.path.join(os.path.dirname(self.page), self.form['action']))
 
         # Sending the form in a POST or a GET request
-        if form['method'].lower() == 'post': out = self.target.POST(form_dest, data=formdata)
-        elif form['method'].lower() == 'get': out = self.target.GET(form_dest + '?' + formdata)
+        if self.form['method'].lower() == 'post': out = self.target.POST(form_dest, data=formdata)
+        elif self.form['method'].lower() == 'get': out = self.target.GET(form_dest + '?' + formdata)
 
         # Return the POST or GET reply
         return out
@@ -142,7 +148,7 @@ class CommandInjection(FormAttack):
         out = FormAttack.run(self, fieldname, fieldvalue)
         if out == -1: return False    # If attack is aborted for any reason, it will return -1
 
-        if 'COMMAND_INJECTION_WORK' in out['data']:
+        if re.search(r'(?<!echo \')(COMMAND_INJECTION_WORK)', out['data'], re.IGNORECASE) and re.search(r'(?<!echo \\\')(COMMAND_INJECTION_WORK)', out['data'], re.IGNORECASE) and not 'SQL' in out['data']:
             print "Injection de commande exploitable sur " + os.path.join(self.target.host, self.page)
             return True
         else:

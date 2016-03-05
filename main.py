@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-# sudo iptables -A OUTPUT -p tcp --tcp-flags RST RST -s 192.168.0.10 -j DRO
+# sudo iptables -A OUTPUT -p tcp --tcp-flags RST RST -s 192.168.0.10 -j DROP
 
 
 ## TODO:
@@ -30,9 +30,10 @@ if __name__ == "__main__":
     # Force Scapy to build packet at layer 3
     conf.L3socket = L3RawSocket
 
+    # Creating an argument parser
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-        description="Outil d'audit d'attaques sur application web et serveurs.")
+        description="Outil d'audit d'attaques sur application et serveurs web.")
 
     parser.add_argument("target", help="Hote (ou url) à attaquer.", action='store')
     parser.add_argument("-t", "--tcp-syn-flood", help='Fait un TCP SYN flood (DOS) sur la cible.', action='store_true')
@@ -45,7 +46,6 @@ if __name__ == "__main__":
     parser.add_argument("-i", "--input", help="Nom du champs à attaquer pour les attaques XSS ou les injections SQL.", action='store')
     parser.add_argument("-v", "--fieldvalue", help="Valeur par défaut d'un autre champ (optionnel) format champ=valeur. Possibilité de spécifier plusieurs champs en appelant plusieurs fois cet argument.", action='append', default=[])
     args = parser.parse_args()
-    # print args
 
     host, page = parseTarget(args.target)
 

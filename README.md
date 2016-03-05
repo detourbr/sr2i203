@@ -16,6 +16,15 @@ Pour plus de détails sur chaque paramètre, taper:
 
     user@debian# ./main.py --help
 
+#### Préambule
+
+Avant toute chose, il est nécessaire d'écrire des règles de routages via iptables. En effet les systèmes Linux les plus récents bloquent les connexions sortantes qui ne sont pas directement controlée par le noyeau. Ainsi pour que scapy fonctionne correctement il faut entre les règles suivantes:
+
+    user@debian# iptables -A OUTPUT -p tcp --tcp-flags RST RST -s 137.194.X.X -j DROP
+    user@debian# iptables -A OUTPUT -p tcp --tcp-flags RST RST -s 127.0.0.1 -j DROP
+
+La première ligne drop tous les paquets RST émis par l'interface eth0/wlan0 par défaut (attention à renseigner la bonne adresse IP). et la seconde ligne fait de même pour tous les paquets à destination de l'interface loopback (pour tester des sites hebergés sur la machine locale).
+
 #### DOS - SYN flood
 Pour lancer une attaque SYN flood, la syntaxe est la suivante:
 
@@ -119,6 +128,14 @@ Le but est encore une fois d'injecter un morceau de code frauduleux permettant d
 
 ## Fichier dos.py
 
-Cette classe devait regrouper plusieurs attaque par déni de service. Par manque de temps, seulement une à été implémentée: le TCP SYN flood.
+Cette classe devait regrouper plusieurs attaque par déni de service. Par manque de temps, seulement une a été implémentée: le TCP SYN flood.
+
+L'attaque se déroule en 2 grandes étapes. Tout d'abord un ensemble de threads est créé, chacun ayant pour cible un intervalle de ports particulier et utilisant une fausse adresse IP (possibilité de ne pas masquer l'IP en mettant le paramètre `fake_ip` à `False` dans la fonction `tcp_syn_flood()`).
+Par défaut chaque thread aura donc une adresse IP différente et une plage de 100 ports. Il est possible de modifier cela dans la méthode `createFloodPool()` de la classe DOS.
+
+Enfin, une fois les threads créés, ils sont éxécutés en même temps lors d'une deuxième étape pour augmenter l'efficacité de l'attaque.
+Il est aussi possible de répéter l'attaque en boucle jusqu'a une interruption manuelle `Ctrl + C` grâce au paramètre infinite qu'il faut mettre à `True` dans la fonction `tcp_syn_flood()`
 
 ## Fichier main.py
+Ce fichier contient un parseur d'arguments puis éxécute en conséquence les attaques souhaitées sur les différentes cibles.
+Il est possible d'éxécuter plusieurs attaques sur une même page.
