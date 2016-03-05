@@ -33,7 +33,7 @@ class FormAttack():
                 id = input('Plusieurs formulaires affichés ci-dessus ont été trouvés.\nMerci de spécifier celui à utiliser (rentrer un l\'ID entre 0 et ' + str(len(selected_forms) - 1) + ') ? ')
         # If no form is found, stop the attack.
         elif len(selected_forms) == 0:
-            print "Aucun formulaire contenant un champ '" + self.fieldname + "'. Abandon."
+            print "Aucun formulaire contenant un champ '", self.fieldname, "'. Abandon."
             return None
         # If only one form, selecting this one
         else: id = 0
