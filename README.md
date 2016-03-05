@@ -2,7 +2,7 @@
 
 ## Introduction
 
-Ce script permet de tester la présence de plusieurs failles mais aussi de mettre en oeuvre différentes attaques web telles que:
+Ce script permet de tester la présence de plusieurs failles et aussi de mettre en oeuvre différentes attaques web telles que:
 * DOS de type SYN flood (mise en oeuvre)
 * ShellShock (test et exploitation)
 * XSS (test)
@@ -18,7 +18,7 @@ Pour plus de détails sur chaque paramètre, taper:
 
 #### Préambule
 
-Avant toute chose, il est nécessaire d'écrire des règles de routages via iptables. En effet les systèmes Linux les plus récents bloquent les connexions sortantes qui ne sont pas directement controlée par le noyeau. Ainsi pour que scapy fonctionne correctement il faut entre les règles suivantes:
+Avant toute chose, il est nécessaire d'écrire des règles de routages via iptables. En effet les systèmes Linux les plus récents bloquent les connexions sortantes qui ne sont pas directement controlées par le noyeau. Ainsi pour que scapy fonctionne correctement, il faut entrer les règles suivantes:
 
     user@debian# iptables -A OUTPUT -p tcp --tcp-flags RST RST -s 137.194.X.X -j DROP
     user@debian# iptables -A OUTPUT -p tcp --tcp-flags RST RST -s 127.0.0.1 -j DROP
@@ -46,7 +46,7 @@ Pour tester une attaque XSS, la syntaxe est la suivante:
 
 Avec :
 * `COOKIE` le cookie à utiliser si besoin
-* `INPUT` le nom (paramètre name) du champs dans lequel tenter le XSS. S'il n'est pas spécifié il sera tenté dans tous les champs texte.
+* `INPUT` le nom (paramètre name) du champs dans lequel tenter le XSS. S'il n'est pas spécifié, il sera tenté dans tous les champs texte.
 * `name=value` le paramètre fieldvalue, pouvant être répété plusieurs fois, permet de spécifier la valeur de certains champs spécifiques dans une page.
 * `target` url vers la page cible.
 
@@ -57,7 +57,7 @@ Pour tester une injection SQL, la syntaxe est la suivante:
 
 Avec :
 * `COOKIE` le cookie à utiliser si besoin
-* `INPUT` le nom (paramètre name) du champs dans lequel tenter le XSS. S'il n'est pas spécifié il sera tenté dans tous les champs texte.
+* `INPUT` le nom (paramètre name) du champs dans lequel tenter le XSS. S'il n'est pas spécifié, il sera tenté dans tous les champs texte.
 * `name=value` le paramètre fieldvalue, pouvant être répété plusieurs fois, permet de spécifier la valeur de certains champs spécifiques dans une page.
 * `target` url vers la page cible.
 
@@ -78,11 +78,11 @@ Avec :
 Cette classe permet d'envoyer et de recevoir des requêtes HTTP en s'appuyant sur scapy.
 Elle gère tout particulièrement les requêtes GET et POST.
 
-La gestion des requêtes étant gérées par scapy, la couche TCP est entièrement controlée par la classe du SYN/ACK au FIN/ACK. Les fragments sont collectés, acquitté puis réassemblés à la fin de la requête.
+La gestion des requêtes étant faite par scapy, la couche TCP est entièrement controlée par la classe du SYN/ACK au FIN/ACK. Les fragments sont collectés, acquitté puis réassemblés à la fin de la requête.
 
 La méthode getForms() permet de récupérer les formulaires et de les parser. Cela permet d'obtenir les principaux champs du formulaire afin de le remplir et le renvoyer.
 
-Cette classe permet par ailleurs d'avoir un header customisé avec un User-Agent, un cookie ou n'importe quel autre champs avec une valeure personnalisée. Utile pour les attaques ShellShock en particulier.
+Cette classe permet par ailleurs d'avoir un header customisé avec un User-Agent, un cookie ou n'importe quel autre champs avec une valeur personnalisée. Elle est utile pour les attaques ShellShock en particulier.
 
 **A noter :** l'https n'est pas supporté.
 
@@ -90,7 +90,7 @@ Cette classe permet par ailleurs d'avoir un header customisé avec un User-Agent
 ### Classe Shellshock
 *Héritée de HTTP*
 
-Cette classe permet de tester et éventuellement d'exploiter une faille ShellShock. Le principe est assez simple. On modifie le user agent pour modifier sont interpretation et lui faire executer une commande sur le shell. Tous les serveurs ayant des scripts CGI et un binaire bash non patchés (implémentation antérieure à Février 2015) sont vulnérables.
+Cette classe permet de tester et éventuellement d'exploiter une faille ShellShock. Le principe est assez simple. On modifie le user agent pour modifier son interpretation et lui faire executer une commande sur le shell. Tous les serveurs ayant des scripts CGI et un binaire bash non patchés (implémentation antérieure à Février 2015) sont vulnérables.
 
 Dans ce script, le but est simplement d'afficher 'SHELLSHOCK_WORK' via la command `echo` afin de s'assurer de la présence de la faille.
 Il est possible d'éxécuter d'autres commandes, mais cela dépend des paramètres de l'OS. En effet, l'utilisateur éxécutant ces commandes est www-data (en général) et n'a donc pas tous les droits. C'est pour cette raison que l'on teste la faille qu'avec un simple `echo` avant un exploitation plus avancée
@@ -99,11 +99,11 @@ Il est possible d'éxécuter d'autres commandes, mais cela dépend des paramètr
 
 ### Classe FormAttack
 
-Cette classe s'appuie sur la classe HTTP présentée précédemment. Elle permet d'attaquer une page web en remplissant un formulaire avec un payload afin de vérifier la présence d'une faille XSS, SQLInjection ou tout autre faille basée sur l'injection d'une valeure particulière dans un formulaire.
+Cette classe s'appuie sur la classe HTTP présentée précédemment. Elle permet d'attaquer une page web en remplissant un formulaire avec un payload afin de vérifier la présence d'une faille XSS, SQLInjection ou tout autre faille basée sur l'injection d'une valeur particulière dans un formulaire.
 
 La méthode `run()` éxécute les actions suivantes:
 * recupération de la page cible via une requête GET
-* séléction du formulaire ciblé par les arguments (ou choix demandé à l'utilisateur) via la méthode `selectForm()`
+* sélection du formulaire ciblé par les arguments (ou choix demandé à l'utilisateur) via la méthode `selectForm()`
 * remplissage du formulaire précédemment séléctionné en y injectant la charge (payload) via la méthode `fillForm()`
 * formattage et renvoie du formulaire en GET ou en POST
 
@@ -119,7 +119,7 @@ Pour vérifier que la faille est présente, il suffit de vérifier que ce code e
 ### Classe SQLInjection
 *Héritée de FormAttack*
 
-Cette classe teste plusieurs injections SQL dans le but de provoquer une erreur de la base MySQL (Oracle ou SQLite non implémentés). Si cela est se produit, alors il est probable qu'aucun controle de la requête ne soit fait. On peut donc la modifier pour dérober d'autre données.
+Cette classe teste plusieurs injections SQL dans le but de provoquer une erreur de la base MySQL (Oracle ou SQLite non implémentés). Si cela se produit, alors il est probable qu'aucun controle de la requête ne soit fait. On peut donc la modifier pour dérober d'autres données.
 
 ### Classe CommandInjection
 *Héritée de FormAttack*
@@ -128,13 +128,13 @@ Le but est encore une fois d'injecter un morceau de code frauduleux permettant d
 
 ## Fichier dos.py
 
-Cette classe devait regrouper plusieurs attaque par déni de service. Par manque de temps, seulement une a été implémentée: le TCP SYN flood.
+Cette classe devait regrouper plusieurs attaques par déni de service. Par manque de temps, seulement une attaque a été implémentée: le TCP SYN flood.
 
 L'attaque se déroule en 2 grandes étapes. Tout d'abord un ensemble de threads est créé, chacun ayant pour cible un intervalle de ports particulier et utilisant une fausse adresse IP (possibilité de ne pas masquer l'IP en mettant le paramètre `fake_ip` à `False` dans la fonction `tcp_syn_flood()`).
 Par défaut chaque thread aura donc une adresse IP différente et une plage de 100 ports. Il est possible de modifier cela dans la méthode `createFloodPool()` de la classe DOS.
 
 Enfin, une fois les threads créés, ils sont éxécutés en même temps lors d'une deuxième étape pour augmenter l'efficacité de l'attaque.
-Il est aussi possible de répéter l'attaque en boucle jusqu'a une interruption manuelle `Ctrl + C` grâce au paramètre infinite qu'il faut mettre à `True` dans la fonction `tcp_syn_flood()`
+Il est aussi possible de répéter l'attaque en boucle jusqu'à une interruption manuelle `Ctrl + C` grâce au paramètre infinite qu'il faut mettre à `True` dans la fonction `tcp_syn_flood()`
 
 ## Fichier main.py
 Ce fichier contient un parseur d'arguments puis éxécute en conséquence les attaques souhaitées sur les différentes cibles.
