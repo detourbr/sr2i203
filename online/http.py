@@ -43,6 +43,9 @@ class HTTP(object):
         if not sport: self.sport = random.randint(30000, 65000)
         else: self.sport = sport
 
+        self.seq = 0    # Sent bytes
+        self.ack = 0    # Received bytes
+
         self.request_header = {"User-Agent":"sr2i203/0.1.1+debian-1",
         "Accept":"text/html, text/*;q=0.5, image/*, application/*, video/*, audio/*, message/*, inode/*, x-content/*, misc/*, x-scheme-handler/*",
         "Host":host}
@@ -63,9 +66,12 @@ class HTTP(object):
         # print "SYN/ACK ", self.host, self.sport
         syn = IP(dst = self.host) / TCP(dport=80, sport=self.sport, flags='S')
         syn_ack = sr1(syn, verbose=0) # Sending syn, receiving syn ack
+        self.host = syn_ack[IP].src
 
-        if syn_ack.haslayer(TCP):
-            ack = IP(dst = self.host) / TCP(dport=80, sport=syn_ack[TCP].dport, seq=syn_ack[TCP].ack, ack=syn_ack[TCP].seq + 1, flags='A')
+        if syn_ack.haslayer(TCP) and (syn_ack[TCP].flags & (HTTP.SYN | HTTP.ACK)):
+            self.seq = syn_ack[TCP].ack
+            self.ack = syn_ack[TCP].seq + 1
+            ack = IP(dst = self.host) / TCP(dport=80, sport=syn_ack[TCP].dport, seq=self.seq, ack=self.ack, flags='A')
             send(ack, verbose = 0) # Sending ack
             return syn_ack
         else:
@@ -76,29 +82,27 @@ class HTTP(object):
             Ferme la connexion passée en paramètre. Si init est à True, cela signifit que c'est la machine locale qui initie la fermeture de connexion.
         """
 
-        if con.haslayer(Raw):
-            close = IP(dst=con[IP].src) / TCP(dport=80, sport=con[TCP].dport, seq=con[TCP].ack, ack=con[TCP].seq + len(con[Raw].load), flags='FA')
-        else:
-            close = IP(dst=con[IP].src) / TCP(dport=80, sport=con[TCP].dport, seq=con[TCP].ack, ack=con[TCP].seq + 1, flags='FA')
+        close = IP(dst=con[IP].src) / TCP(dport=80, sport=con[TCP].dport, seq=self.seq, ack=self.ack, flags='FA')
+        self.seq += 1
 
         # If connection closing initiated by client: send(FIN ACK) -> rcv(ACK then FIN ACK) -> send(ACK)
         # If connection closing initiated by server:                          send(FIN ACK) ->  rcv(ACK)
         if init:
-            a, u = sr(close, verbose = 0, multi=1, timeout=0.5) # send(FIN ACK) -> rcv(ACK then FIN ACK)
-            r = a[-1][1]                                        # Selectinf FIN ACK in received packets
-            send(IP(dst=r[IP].src) / TCP(dport=80, sport=r[TCP].dport, seq=r[TCP].ack, ack=r[TCP].seq + 1, flags='A'), verbose=0) # Sending final ACK
+            r = sr(close, verbose = 0, multi=1, timeout=0.5)[0][-1][1]  # send(FIN ACK) -> rcv(ACK and FIN ACK) (select FIN ACK only)
+            self.ack += 1
+            send(IP(dst=r[IP].src) / TCP(dport=80, sport=r[TCP].dport, seq=self.seq, ack=self.ack, flags='A'), verbose=0) # Sending final ACK
         else: send(close, verbose=0) # Sending FIN ACK
 
-    def addFragment(self, html_rep, page, ack, seq):
+    def addFragment(self, html_rep, page):
         """
             Ajoute un fragment TCP recu à la liste des fragments TCP
             Parse le header de la réponse HTTP s'il s'agit du premier fragment
         """
 
         if page in self.get and not html_rep.startswith('HTTP'):
-            if not (ack, seq) in self.get[page]['data_frag']:
-                self.get[page]['data_frag'][(ack, seq)] = html_rep      # Adding a fragment
-                self.get[page]['len'] += len(html_rep)                  # Updating total data length
+            # if not (self.seq, self.ack) in self.get[page]['data_frag']:
+            self.get[page]['data'] += html_rep                      # Adding a fragment
+            self.get[page]['len'] += len(html_rep)                  # Updating total data length
 
         elif html_rep.startswith('HTTP'):   # Received fragment is the first one (HTTP header)
             try: header, data = html_rep.split('\r\n\r\n', 1)
@@ -113,9 +117,12 @@ class HTTP(object):
                  if ': ' not in header[i]: header[i] += ': '
 
             header = {i.split(': ')[0].title():i.split(': ')[1] for i in header[1:]}
-            self.get[page] = {'code':code, 'header':header, 'data_frag':{(ack, seq):data}, 'data':data, 'len': len(data)}
-        else:
-            print "ERREUR A TRAITER: HEADER N EST PAS ARRIVE EN PREMIER..."
+            self.get[page] = {'code':code, 'header':header, 'data_frag':{(self.seq, self.ack):data}, 'data':data, 'len': len(data)}
+
+        else: print "ERREUR A TRAITER: HEADER N EST PAS ENVOYÉ EN PREMIER..."
+
+        # Updating ack number
+        self.ack += len(html_rep)
 
     def mergeFragments(self, page):
         """
@@ -263,8 +270,11 @@ class HTTP(object):
         q = Queue.Queue()
 
         # Preparing packet with the http payload
-        request = IP(dst=self.host) / TCP(dport=80, sport=syn_ack[TCP].dport, seq=syn_ack[TCP].ack, ack=syn_ack[TCP].seq + 1, flags='PA') / http_request
+        # print self.seq, self.ack
+        request = IP(dst=self.host) / TCP(dport=80, sport=syn_ack[TCP].dport, seq=self.seq, ack=self.ack, flags='PA') / http_request
         repl, u = sr(request, multi=1, timeout=1, retry=3, verbose=0)
+        self.seq += len(http_request)
+
 
         # Append all received packets to a FIFO queue
         for s, reply in repl: q.put(reply)
@@ -274,25 +284,32 @@ class HTTP(object):
             reply = q.get()
 
             # If the fragment contains data (and is a ACK or PUSH ACK)
-            if reply[TCP].flags & HTTP.ACK and (reply.haslayer(Raw)):
+            if reply[TCP].flags & HTTP.ACK and reply.haslayer(Raw):
 
-                # We add the fragment to previously fetched fragments for this page
-                self.addFragment(reply[Raw].load, page, reply[TCP].ack, reply[TCP].seq)
+                # If packet is the next one (according to ack and seq number)
+                if reply[TCP].seq == self.ack and reply[TCP].ack == self.seq:
 
-                # Preparing the ACK for the receivedd fragment
-                request = IP(dst=self.host) / TCP(dport=80, sport=reply[TCP].dport, seq=reply[TCP].ack, ack=reply[TCP].seq + len(reply[Raw].load), flags='A')
+                    # We add the fragment to previously fetched fragments for this page
+                    self.addFragment(reply[Raw].load, page)
 
-                # Veryfing if request completed
-                if 'Content-Length' in self.get[page]['header'] and self.get[page]['header']['Content-Length'] <= self.get[page]['len']: break
+                    # Preparing the ACK for the receivedd fragment
+                    request = IP(dst=self.host) / TCP(dport=80, sport=reply[TCP].dport, seq=self.seq, ack=self.ack, flags='A')
 
-                # Sending ACK and waiting for new fragments
-                a, u = sr(request, verbose = 0, timeout=0.1, multi=1)
-                for s, r in a: q.put(r) # Adding new fragments to queue
+                    # Veryfing if request completed
+                    if 'Content-Length' in self.get[page]['header'] and self.get[page]['header']['Content-Length'] <= self.get[page]['len']: break
+
+                    # Sending ACK and waiting for new fragments
+                    a, u = sr(request, verbose = 0, timeout=0.1, multi=1)
+                    for s, r in a: q.put(r) # Adding new fragments to queue
+
+                else:
+                    q.put(reply)
+                    continue
 
             elif reply[TCP].flags & HTTP.RST : break # If receiving RST flag -> no more data will be sent
 
         # Merging fragments
-        self.mergeFragments(page)
+        # self.mergeFragments(page)
         return reply
 
 
