@@ -6,10 +6,7 @@
 
 ## TODO:
 ##  - vérifier que le code HTTP est 200 avant de poursuivre une attaque
-##  - cas ou input n'est pas donné en arg ?
-##  - Implémentation des command injection ?
 
-# from online import *
 from online.FormAttack import *
 from online.http import *
 from online.dos import *
@@ -36,7 +33,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         prog='Oxomo', #'Camaxtli'
-        description="Outil d'audit d'attaques sur application et serveurs web.")
+        description="Outil de sécurité permettant de tester différent types d'attaques en ligne: sur des applications et serveurs web. Et en local: avec des attaques type MITM.")
 
     # Online attacks
     parser.add_argument("target", help="Hote (ou url) à attaquer.", action='store')

@@ -57,7 +57,7 @@ Pour tester une injection SQL, la syntaxe est la suivante:
 
 Avec :
 * `COOKIE` le cookie à utiliser si besoin
-* `INPUT` le nom (paramètre name) du champs dans lequel tenter le XSS. S'il n'est pas spécifié, il sera tenté dans tous les champs texte.
+* `INPUT` le nom (paramètre name) du champs dans lequel tenter l'injection SQL. S'il n'est pas spécifié, il sera tenté dans tous les champs texte.
 * `name=value` le paramètre fieldvalue, pouvant être répété plusieurs fois, permet de spécifier la valeur de certains champs spécifiques dans une page.
 * `target` url vers la page cible.
 
@@ -68,7 +68,7 @@ Pour tester une injection de commande, la syntaxe est la suivante:
 
 Avec :
 * `COOKIE` le cookie à utiliser si besoin
-* `INPUT` le nom (paramètre name) du champs dans lequel tenter le XSS. S'il n'est pas spécifié il sera tenté dans tous les champs texte.
+* `INPUT` le nom (paramètre name) du champs dans lequel tenter l'injection de commandes. S'il n'est pas spécifié il sera tenté dans tous les champs texte.
 * `name=value` le paramètre fieldvalue, pouvant être répété plusieurs fois, permet de spécifier la valeur de certains champs spécifiques dans une page.
 * `target` url vers la page cible .
 
@@ -114,7 +114,7 @@ Cette classe injecte le code suivant dans un formulaire:
 ```
     <a onmouseover="alert('...')">x</a>
 ```
-Pour vérifier que la faille est présente, il suffit de vérifier que ce code est bien présent, tel quel, sans caractère d'échappement.
+Pour vérifier que la faille est présente, il suffit de vérifier que ce code est bien présent, tel quel, sans caractère d'échappement dans la réponse.
 
 ### Classe SQLInjection
 *Héritée de FormAttack*
@@ -124,7 +124,7 @@ Cette classe teste plusieurs injections SQL dans le but de provoquer une erreur 
 ### Classe CommandInjection
 *Héritée de FormAttack*
 
-Le but est encore une fois d'injecter un morceau de code frauduleux permettant de crasher la commande qui devrait s'éxécuter en temps normal puis de faire un `echo` à la suite pour vérifier la possibilité d'enchaîner d'autres commandes.
+Le but est encore une fois d'injecter un morceau de code frauduleux. Ce code doit permettre de crasher la commande qui devrait s'éxécuter normalement puis de faire un `echo` à la suite pour vérifier la possibilité d'enchaîner d'autres commandes.
 
 ## Fichier dos.py
 
@@ -139,3 +139,7 @@ Il est aussi possible de répéter l'attaque en boucle jusqu'à une interruption
 ## Fichier main.py
 Ce fichier contient un parseur d'arguments puis éxécute en conséquence les attaques souhaitées sur les différentes cibles.
 Il est possible d'éxécuter plusieurs attaques sur une même page.
+
+## Man in-th-middle
+
+A venir...

