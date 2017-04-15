@@ -329,7 +329,7 @@ class ShellShock(HTTP):
 
     def test(self):
         uid = getUniqueID()
-        pattern = "SHELL_SHOCK_WORK_HERE_" + uid
+        pattern = "SHELL_SHOCK_WORKS_HERE_" + uid
         self.run("echo; echo '" + pattern + "'")
 
         if pattern in self.get[self.target]['data']:

